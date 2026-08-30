@@ -1,0 +1,420 @@
+{
+  "milestone": {
+    "title": "v1 \u2014 Local End-to-End Run",
+    "description": "Definition of done: `pr-agent --repo <path>` run against a real repo merges every green PR and fixes/merges at least one red one, unattended, with dry-run as the safe default and no orphaned state left behind on a crash. See PROJECT_PLAN.md \u00a72 for the full checklist this milestone represents."
+  },
+  "epics": [
+    {
+      "title": "Epic: Repository & Environment Setup",
+      "labels": [
+        "priority:P0",
+        "size:S"
+      ],
+      "depends_on": [],
+      "body": "Stand up the pr-agent repository with deliberate settings \u2014 visibility, license, branch protection \u2014 and a packaging layout the rest of the project builds into.\n\nBlocks every other epic: nothing else can start until the repo exists.",
+      "issues": [
+        {
+          "title": "Create the pr-agent GitHub repository",
+          "labels": [
+            "size:S"
+          ],
+          "body": "Create the repository with explicit, deliberate settings rather than accepting whatever `gh repo create` defaults to.\n\n```bash\ngh repo create <owner>/pr-agent \\\n  --public \\\n  --description \"A custom agent that reviews, fixes, and merges pull requests. Built to leverage Hugging Face's model inference providers for agent orchestration fundamentals.\" \\\n  --license mit \\\n  --clone\n```\n\n**This repository is public, and that's a decision, not a default.** Say so explicitly, because it matters here more than for a typical project: this tool pushes commits and merges pull requests autonomously, and a public repo means anyone can read exactly how it decides to do that. State the visibility choice in the README's opening section, not just in the `gh` command history.\n\n### Acceptance criteria\n- [ ] Repository created with the command above (or an explicit alternative decision recorded in this issue if private is chosen instead, with the reason why)\n- [ ] README's opening section states the repo is public and names the consequence: never commit `HF_TOKEN` or any token, since there's no private-repo safety net if a secret leaks into a commit\n- [ ] MIT license file present (or the alternative license decision recorded)\n- [ ] Default branch is `main`\n- [ ] Branch protection on `main` configured: require status checks to pass before merging once CI/pre-commit exists (document the interim state \u2014 no protection \u2014 as a known gap if pre-commit isn't wired yet at this point)\n- [ ] Repository topics set for discoverability: `huggingface`, `open-weight-llm`, `ai-agent`, `github-automation`, `python`\n- [ ] The initial commit is scanned by hand (or with a tool like `gitleaks` or `trufflehog`) to confirm no secret is present before the first push to a public remote"
+        },
+        {
+          "title": "Scaffold Python packaging",
+          "labels": [
+            "size:S"
+          ],
+          "body": "`pyproject.toml`, exact fields:\n\n```toml\n[project]\nname = \"pr-agent\"\nversion = \"0.1.0\"\nrequires-python = \">=3.11\"\ndependencies = [\n    \"openai>=1.40.0\",\n    \"pydantic>=2.0\",\n]\n\n[project.optional-dependencies]\ndev = [\"pytest>=8.0\", \"ruff>=0.6\"]\n```\n\nPackage layout:\n\n```\npr-agent/\n  agent/\n    __init__.py\n    core.py           # the tool-use loop (Epic: Core Agent Loop)\n    tools.py          # tool factory + implementations (Epic: Agent Tools)\n    prompts.py        # the merge/fix/retry policy\n    schemas.py        # PROutcome / PRStatus\n    orchestrator.py   # run_all() / run_all_parallel()\n  main.py             # CLI entrypoint\n  pyproject.toml\n```\n\n### Acceptance criteria\n- [ ] `pyproject.toml` created with the fields above\n- [ ] `pip install -e \".[dev]\"` succeeds in a clean virtualenv\n- [ ] Package layout matches the tree above exactly"
+        },
+        {
+          "title": "Add environment and secrets scaffolding",
+          "labels": [
+            "size:S"
+          ],
+          "body": "`.gitignore` entries: `.venv/`, `.pr-agent-worktrees/`, `.env`, `__pycache__/`, `runs/`, `*.egg-info/`.\n\n`.env.example`:\n\n```\nHF_TOKEN=hf_...\nPR_AGENT_DRY_RUN=1\n```\n\n### Acceptance criteria\n- [ ] `.gitignore` includes every entry listed above\n- [ ] `.env.example` present with both variables, placeholder values only \u2014 never a real key\n- [ ] Because this repo is public: after creating a real local `.env`, confirm `git status` shows it ignored, not staged"
+        },
+        {
+          "title": "Configure pre-commit hooks",
+          "labels": [
+            "size:S"
+          ],
+          "body": "`.pre-commit-config.yaml`:\n\n```yaml\nrepos:\n  - repo: https://github.com/astral-sh/ruff-pre-commit\n    rev: v0.6.0\n    hooks:\n      - id: ruff\n        args: [--fix]\n      - id: ruff-format\n```\n\n`mypy` is optional here \u2014 decide and record the decision rather than leaving it unaddressed.\n\n### Acceptance criteria\n- [ ] `.pre-commit-config.yaml` present with at least `ruff` lint + format\n- [ ] `mypy` decision made and noted in this issue either way\n- [ ] `pre-commit install` documented as a required step in the README quickstart"
+        },
+        {
+          "title": "Write local dev setup instructions",
+          "labels": [
+            "size:S"
+          ],
+          "body": "A README \"Development setup\" section a second contributor could follow without asking a question \u2014 worth calling out explicitly since this repo is public and might be read by someone who wasn't in any of the conversations that shaped it.\n\n### Acceptance criteria\n- [ ] Section covers: clone, create venv, `pip install -e \".[dev]\"`, `pre-commit install`, `pytest`\n- [ ] Every command in the section is copy-pasteable and actually verified to work from a clean checkout"
+        }
+      ]
+    },
+    {
+      "title": "Epic: Core Agent Loop",
+      "labels": [
+        "priority:P0",
+        "size:M"
+      ],
+      "depends_on": [
+        "Epic: Repository & Environment Setup"
+      ],
+      "body": "The generic tool-use loop, streaming, structured-output extraction, the PR outcome schema, and the merge/fix/retry policy prompt. This code knows how to run an agent; it doesn't know what a PR is \u2014 that's `agent/tools.py`, built in parallel by the Agent Tools epic.\n\nParallel-safe with Agent Tools: both only depend on Setup.",
+      "issues": [
+        {
+          "title": "Implement the tool-use agent loop",
+          "labels": [
+            "size:M"
+          ],
+          "body": "`agent/core.py`'s `Agent` class. This is the generic mechanism \u2014 it has no knowledge of PRs, git, or gh.\n\n**Constructor:** `system_prompt: str`, `tools: list[dict]`, `tool_impls: dict[str, Callable]`, `model: str`, `max_turns: int`, `verbose: bool`.\n\nThe client is `openai.OpenAI`, pointed at Hugging Face's router (`base_url=\"https://router.huggingface.co/v1\"`) \u2014 HF's Inference Providers speak the OpenAI wire format, not Anthropic's, which shapes every detail below.\n\n**`run(task: str) -> AgentResult`:**\n1. Append `task` as a user message.\n2. Loop up to `max_turns` times: call `client.chat.completions.create(model=..., messages=..., tools=...)`.\n3. Check `response.choices[0].message.tool_calls`. If it's truthy: for every entry, parse `json.loads(call.function.arguments)` and call `tool_impls[call.function.name](**args)`. Wrap the call in try/except \u2014 an exception becomes a `role: \"tool\"` message whose content describes the error, not a crash. Append the assistant message itself (via `message.model_dump()`) *before* the tool results \u2014 the model needs to see its own prior turn \u2014 then one `{\"role\": \"tool\", \"tool_call_id\": call.id, \"content\": str(result)}` message per call, and continue the loop.\n4. If `tool_calls` is empty/`None`: return an `AgentResult` with the final text (`message.content`), the turn count, and `hit_max_turns=False`.\n5. If the loop exhausts `max_turns` without a no-tool-calls response, return an `AgentResult` with `hit_max_turns=True` instead of looping forever.\n\n### Acceptance criteria\n- [ ] `Agent.run()` implements the loop exactly as described above, using the OpenAI-style `tool_calls` shape, not Anthropic's `tool_use` content blocks\n- [ ] A tool implementation raising any exception produces a `role: \"tool\"` result describing the error instead of propagating\n- [ ] `max_turns` is enforced and `hit_max_turns` is set correctly on exhaustion\n- [ ] Unit tests, with the `openai.OpenAI` client (pointed at Hugging Face's router) mocked to return scripted responses, cover: an immediate no-tool-calls answer; one tool call followed by a final answer; `max_turns` exhaustion; a tool implementation that raises"
+        },
+        {
+          "title": "Implement streaming turns",
+          "labels": [
+            "size:S"
+          ],
+          "body": "Replace a blocking `client.chat.completions.create()` call with the same call plus `stream=True`, so text prints as it arrives instead of after the full turn completes.\n\nThis is genuinely more involved than a single-vendor SDK's streaming helper, and worth budgeting real time for: the OpenAI-compatible streaming response is an iterator of small chunks, and a tool call's `function.arguments` string arrives *fragmented* across multiple chunks, identified by an `index` field, not as one whole block the way Anthropic's stream helper hands it back. Iterate the chunks; for each one, print `chunk.choices[0].delta.content` when present (this is the part that streams token-by-token); accumulate any `delta.tool_calls` fragments into a dict keyed by index, concatenating each fragment's `function.arguments` string until the stream ends; reconstruct the final message shape from the accumulated pieces once the stream is exhausted.\n\n### Acceptance criteria\n- [ ] The turn-sending method supports both a streaming path and a non-streaming path (`stream: bool` toggle), since the structured-output extraction call in the next story needs the non-streaming path\n- [ ] Streaming path is verified to print text incrementally (captured stdout in a test, or manual verification noted here)\n- [ ] Streaming path correctly reassembles a tool call whose arguments arrive split across multiple chunks \u2014 test this specifically with a scripted multi-chunk fixture, since it's the part most likely to silently produce malformed JSON\n- [ ] Both paths return the same shape of result to the rest of the loop"
+        },
+        {
+          "title": "Implement structured final-output extraction",
+          "labels": [
+            "size:M"
+          ],
+          "body": "After the tool-use loop ends (not on every turn \u2014 see the reasoning below), make one additional, tool-free call passing `response_format={\"type\": \"json_schema\", \"json_schema\": <schema>}` (or the SDK's `.beta.chat.completions.parse(..., response_format=<PydanticModel>)` convenience wrapper, where available), asking the model to restate the outcome it already reached, constrained to a JSON schema (see the \"Define the PR outcome schema\" story for the schema itself).\n\nWhy a separate call instead of attaching the schema to every turn: a turn where the model still needs to call a tool isn't supposed to produce a final JSON answer yet \u2014 forcing a structured response format onto those turns conflicts with the tool-use turns instead of complementing them.\n\n**Real caveat, not a hypothetical one:** unlike a single vendor's API, Hugging Face's router fans out to many different backend providers and models, and strict JSON-schema adherence isn't guaranteed to be equally reliable across all of them. Verify this specifically against whichever model this project ends up targeting \u2014 don't assume support just because the request is accepted without an error.\n\n### Acceptance criteria\n- [ ] The extraction call happens once, after the loop reaches a no-tool-calls response, using the already-accumulated conversation plus one appended prompt asking for the structured report\n- [ ] A failure in this call (exception, malformed JSON that fails schema validation) does not crash the run \u2014 `AgentResult.outcome` is `None` and `final_text` is still populated from the loop's own answer\n- [ ] The chosen model/provider's structured-output support is verified against a real request before relying on it \u2014 record the finding in this issue (works reliably / needs a manual-JSON-parsing fallback)\n- [ ] Unit tests cover both the success path and the failure/fallback path with a mocked client"
+        },
+        {
+          "title": "Define the PR outcome schema",
+          "labels": [
+            "size:S"
+          ],
+          "body": "`agent/schemas.py`:\n\n```python\nfrom enum import Enum\nfrom pydantic import BaseModel, Field\n\nclass PRStatus(str, Enum):\n    merged = \"merged\"\n    fix_pushed_pending_ci = \"fix_pushed_pending_ci\"\n    needs_human_review = \"needs_human_review\"\n\nclass PROutcome(BaseModel):\n    pr_number: int\n    status: PRStatus\n    summary: str = Field(description=\"One or two sentences: what was found and what was done.\")\n```\n\n### Acceptance criteria\n- [ ] `PRStatus` and `PROutcome` defined exactly as above\n- [ ] `PROutcome.model_json_schema()` produces a valid JSON Schema (import and call it in a test \u2014 a broken model definition should fail CI, not surface at runtime against a real PR)"
+        },
+        {
+          "title": "Write the merge/fix/retry policy prompt",
+          "labels": [
+            "size:M"
+          ],
+          "body": "`agent/prompts.py`'s `SINGLE_PR_SYSTEM_PROMPT`. The policy, in full:\n\n1. Check the PR's CI status.\n2. If every check is green: merge (squash) and stop.\n3. If any check is failing: fetch the failure logs, check out the branch, diagnose the failure, make the smallest correct fix, commit and push it, then re-check CI.\n4. If CI is still pending, stop for now rather than looping instantly \u2014 report pending status, the run will re-check later.\n5. If a fix attempt fails twice in a row for the same PR, stop and report `needs_human_review` instead of trying a third time.\n6. Never force-push. Never modify `.github/workflows/**` unless that file *is* the diagnosed failure. Never merge a PR whose checks weren't personally verified green in this conversation.\n\n### Acceptance criteria\n- [ ] `SINGLE_PR_SYSTEM_PROMPT` contains all six policy points above, in substance if not verbatim wording\n- [ ] The retry limit (\"twice in a row\") is called out in this issue as a known TODO to pull into config once the Configuration & Safety Guardrails epic's `max_fix_attempts` field exists \u2014 not blocking for this story, but don't forget it"
+        }
+      ]
+    },
+    {
+      "title": "Epic: Agent Tools",
+      "labels": [
+        "priority:P0",
+        "size:L"
+      ],
+      "depends_on": [
+        "Epic: Repository & Environment Setup"
+      ],
+      "body": "Every tool the agent can call, one story per tool. Design principles that apply to all of them:\n\n1. **The schema is the interface.** The model never sees the Python \u2014 only the JSON schema (name, description, input_schema). Write descriptions like onboarding a literal new engineer.\n2. **Narrow tools beat one big shell tool.** A single `run_shell(command)` tool would be less code, and also how you get an agent that force-pushes or merges the wrong PR because it \"seemed reasonable\" mid-diagnosis. A structured tool can't be misused into the wrong shape.\n3. **Tools are built per working directory, not imported as globals** \u2014 see the \"Design the per-directory tool factory\" story, which the other nine depend on.\n\nParallel-safe with Core Agent Loop: both only depend on Setup. `agent/core.py` doesn't know what a PR is; `agent/tools.py` doesn't know how to call the model.",
+      "issues": [
+        {
+          "title": "Design the per-directory tool factory",
+          "labels": [
+            "size:M"
+          ],
+          "body": "The foundational piece every tool story below builds on: `build_tool_impls(repo_dir: Path, dry_run: bool = False) -> dict[str, Callable]`.\n\nWhy a factory instead of module-level functions reading a global `REPO_DIR`: a global works fine with one agent running at a time, and breaks the moment two agents in two threads both expect to be \"the\" working directory (see the Observability/CLI epics \u2014 worktree-based parallelism depends on this). `build_tool_impls()` returns closures bound to one specific directory via default-argument capture (`repo_dir=repo_dir` in each inner function's signature, not a bare reference to the outer variable) so two calls with different directories never share state.\n\nAlso define a shared `_run(cmd: list[str] | str, cwd: Path, timeout: int = 120) -> str` helper: runs the command, captures stdout+stderr, and on nonzero exit returns `f\"[exit code {code}]\\n{output}\"` as text rather than raising \u2014 every tool below is built on this, so the model (and tests) see failures as readable text, not exceptions.\n\n### Acceptance criteria\n- [ ] `build_tool_impls(repo_dir, dry_run)` returns a dict keyed by all nine tool names listed in this epic\n- [ ] Two calls with different `repo_dir` values produce independently-bound closures \u2014 write this as an explicit test (inspect a returned function's bound default argument, or call it and assert it touches the right directory), since it's the property that makes worktree parallelism safe later\n- [ ] `_run()` never raises for a failing subprocess; only for something like a missing binary should it raise, and that should be an explicit, documented exception"
+        },
+        {
+          "title": "Tool: list_open_prs",
+          "labels": [
+            "size:S"
+          ],
+          "body": "No arguments. Wraps:\n\n```bash\ngh pr list --state open --json number,title,author,headRefName\n```\n\nSchema `input_schema`: `{\"type\": \"object\", \"properties\": {}}`.\nDescription: \"List all open pull requests in the current repo, with number, title, author, and branch name.\"\n\n### Acceptance criteria\n- [ ] Implementation added to `build_tool_impls()` in `agent/tools.py`, calling the exact command above with `cwd=repo_dir`\n- [ ] Schema entry added to `TOOLS`, matching the implementation's parameter names exactly\n- [ ] Unit test: `subprocess.run` mocked, asserts the exact command the tool builds\n- [ ] Unit test: a failing/erroring underlying command returns descriptive text (via the shared `_run()` helper) rather than raising"
+        },
+        {
+          "title": "Tool: get_pr_ci_status",
+          "labels": [
+            "size:S"
+          ],
+          "body": "Argument: `pr_number` (integer, required). Wraps:\n\n```bash\ngh pr checks <pr_number> --json name,state,link\n```\n\nDescription: \"Get the CI check status (name, state: success/failure/pending, and link) for a given PR number.\"\n\n### Acceptance criteria\n- [ ] Implementation added to `build_tool_impls()` in `agent/tools.py`, calling the exact command above with `cwd=repo_dir`\n- [ ] Schema entry added to `TOOLS`, matching the implementation's parameter names exactly\n- [ ] Unit test: `subprocess.run` mocked, asserts the exact command the tool builds\n- [ ] Unit test: a failing/erroring underlying command returns descriptive text (via the shared `_run()` helper) rather than raising"
+        },
+        {
+          "title": "Tool: get_failing_ci_logs",
+          "labels": [
+            "size:M"
+          ],
+          "body": "Argument: `pr_number` (integer, required). Logic:\n\n```bash\nbranch=$(gh pr view <pr_number> --json headRefName -q .headRefName)\nrun_id=$(gh run list --branch \"$branch\" --status failure \\\n  --limit 1 --json databaseId -q '.[0].databaseId')\n# if run_id is empty: return \"No failed run found for this branch.\"\ngh run view \"$run_id\" --log-failed   # truncate to 8000 chars\n```\n\nDescription: \"Fetch the log output of the most recent failed CI run for a PR's branch. Use this to diagnose why a check failed before attempting a fix.\"\n\n### Acceptance criteria\n- [ ] Implementation added to `build_tool_impls()` in `agent/tools.py`, calling the exact command above with `cwd=repo_dir`\n- [ ] Schema entry added to `TOOLS`, matching the implementation's parameter names exactly\n- [ ] Unit test: `subprocess.run` mocked, asserts the exact command the tool builds\n- [ ] Unit test: a failing/erroring underlying command returns descriptive text (via the shared `_run()` helper) rather than raising\n- [ ] Unit test covers the \"no failed run found\" branch specifically, not just the happy path"
+        },
+        {
+          "title": "Tool: checkout_pr",
+          "labels": [
+            "size:S"
+          ],
+          "body": "Argument: `pr_number` (integer, required). Wraps:\n\n```bash\ngh pr checkout <pr_number>\n```\n\nDescription: \"Check out a PR's branch locally so its files can be read and edited.\"\n\n### Acceptance criteria\n- [ ] Implementation added to `build_tool_impls()` in `agent/tools.py`, calling the exact command above with `cwd=repo_dir`\n- [ ] Schema entry added to `TOOLS`, matching the implementation's parameter names exactly\n- [ ] Unit test: `subprocess.run` mocked, asserts the exact command the tool builds\n- [ ] Unit test: a failing/erroring underlying command returns descriptive text (via the shared `_run()` helper) rather than raising"
+        },
+        {
+          "title": "Tool: read_file",
+          "labels": [
+            "size:S"
+          ],
+          "body": "Argument: `path` (string, required), relative to `repo_dir`. Resolve `repo_dir / path`, refuse if the resolved path doesn't stay under `repo_dir` (path traversal guard), return an error string if the file doesn't exist, otherwise return its contents (truncated to 20,000 characters).\n\nDescription: \"Read a file's contents from the currently checked-out repo, relative to the repo root.\"\n\n### Acceptance criteria\n- [ ] Implementation added to `build_tool_impls()` in `agent/tools.py`, calling the exact command above with `cwd=repo_dir`\n- [ ] Schema entry added to `TOOLS`, matching the implementation's parameter names exactly\n- [ ] Unit test: `subprocess.run` mocked, asserts the exact command the tool builds\n- [ ] Unit test: a failing/erroring underlying command returns descriptive text (via the shared `_run()` helper) rather than raising\n- [ ] Unit test: a path like `\"../../etc/passwd\"` is refused, not read"
+        },
+        {
+          "title": "Tool: write_file",
+          "labels": [
+            "size:S"
+          ],
+          "body": "Arguments: `path`, `content` (both string, both required). Same traversal guard as `read_file`. Overwrites the file at `repo_dir / path`.\n\nDescription: \"Overwrite a file's contents in the currently checked-out repo, relative to the repo root. Use read_file first to see the current content.\"\n\nNote: the block on writing to `.github/workflows/**` is **not** part of this story \u2014 implement the basic version here; that guard is its own story in the Configuration & Safety Guardrails epic, layered on top of this tool once it exists.\n\n### Acceptance criteria\n- [ ] Implementation added to `build_tool_impls()` in `agent/tools.py`, calling the exact command above with `cwd=repo_dir`\n- [ ] Schema entry added to `TOOLS`, matching the implementation's parameter names exactly\n- [ ] Unit test: `subprocess.run` mocked, asserts the exact command the tool builds\n- [ ] Unit test: a failing/erroring underlying command returns descriptive text (via the shared `_run()` helper) rather than raising\n- [ ] Unit test: the same path-traversal case as `read_file`, applied to a write"
+        },
+        {
+          "title": "Tool: run_diagnostic_command",
+          "labels": [
+            "size:M",
+            "safety-critical"
+          ],
+          "body": "Argument: `command` (string, required). This is the one deliberately loose tool \u2014 diagnosing an arbitrary CI failure genuinely is open-ended \u2014 but it's fenced off from anything that changes git state.\n\nOnly execute `command` if it starts with one of this exact allowlist: `\"npm \"`, `\"npx \"`, `\"yarn \"`, `\"pnpm \"`, `\"cat \"`, `\"ls \"`, `\"grep \"`, `\"rg \"`, `\"head \"`, `\"tail \"`, `\"git diff\"`, `\"git log\"`, `\"git status\"`, `\"git show\"`. Anything else returns a `\"Refused: ...\"` string and is never passed to a shell.\n\nDescription: \"Run a read-only or build/test command in the checked-out repo to diagnose a CI failure. Cannot push, merge, or modify git history \u2014 those go through the dedicated tools.\"\n\n### Acceptance criteria\n- [ ] Implementation added to `build_tool_impls()` in `agent/tools.py`, calling the exact command above with `cwd=repo_dir`\n- [ ] Schema entry added to `TOOLS`, matching the implementation's parameter names exactly\n- [ ] Unit test: `subprocess.run` mocked, asserts the exact command the tool builds\n- [ ] Unit test: a failing/erroring underlying command returns descriptive text (via the shared `_run()` helper) rather than raising\n- [ ] Unit test: a disallowed command (for example, `\"rm -rf /\"`) is refused and **never reaches subprocess** \u2014 assert the mock was not called, not just that the return string looks like a refusal"
+        },
+        {
+          "title": "Tool: commit_and_push",
+          "labels": [
+            "size:S",
+            "safety-critical"
+          ],
+          "body": "Argument: `message` (string, required). Runs `git add -A`, then `git commit -m <message>`. If `dry_run` is set on the factory, skip the push and report `\"push: [skipped \u2014 dry run]\"`; otherwise run `git push`.\n\nDescription: \"Stage all changes, commit with the given message, and push to the current branch's remote.\"\n\n### Acceptance criteria\n- [ ] Implementation added to `build_tool_impls()` in `agent/tools.py`, calling the exact command above with `cwd=repo_dir`\n- [ ] Schema entry added to `TOOLS`, matching the implementation's parameter names exactly\n- [ ] Unit test: `subprocess.run` mocked, asserts the exact command the tool builds\n- [ ] Unit test: a failing/erroring underlying command returns descriptive text (via the shared `_run()` helper) rather than raising\n- [ ] Unit test: with `dry_run=True`, the push subprocess is never invoked, while add/commit still run"
+        },
+        {
+          "title": "Tool: merge_pr",
+          "labels": [
+            "size:S",
+            "safety-critical"
+          ],
+          "body": "Arguments: `pr_number` (integer, required), `method` (string, one of `\"squash\"` / `\"rebase\"` / `\"merge\"`, default `\"squash\"`). Reject an invalid `method` before touching `gh`. If `dry_run`, skip and report what would have run; otherwise:\n\n```bash\ngh pr merge <pr_number> --<method> --auto\n```\n\nDescription: \"Merge a PR once its CI is green. method is 'squash' (default), 'rebase', or 'merge'. Uses --auto so GitHub merges it as soon as required checks pass.\"\n\n### Acceptance criteria\n- [ ] Implementation added to `build_tool_impls()` in `agent/tools.py`, calling the exact command above with `cwd=repo_dir`\n- [ ] Schema entry added to `TOOLS`, matching the implementation's parameter names exactly\n- [ ] Unit test: `subprocess.run` mocked, asserts the exact command the tool builds\n- [ ] Unit test: a failing/erroring underlying command returns descriptive text (via the shared `_run()` helper) rather than raising\n- [ ] Unit test: with `dry_run=True`, `gh pr merge` is never invoked\n- [ ] Unit test: an invalid `method` value is rejected before any subprocess call is made"
+        }
+      ]
+    },
+    {
+      "title": "Epic: Configuration & Safety Guardrails",
+      "labels": [
+        "priority:P0",
+        "size:L"
+      ],
+      "depends_on": [
+        "Epic: Core Agent Loop",
+        "Epic: Agent Tools"
+      ],
+      "body": "Move every safety-relevant behavior out of comments/prompt-text and into code that fails closed, and give the agent a real config surface instead of two environment variables.\n\nDepends on both Core Agent Loop and Agent Tools \u2014 several of these guardrails extend a specific tool (the workflow-file write-block extends `write_file`) or gate the loop itself. Has to be substantially done before any live (non-dry-run) execution against a real repo \u2014 see PROJECT_PLAN.md \u00a713 for the specific risks this closes.",
+      "issues": [
+        {
+          "title": "Build pr_agent/config.py with a clear precedence order",
+          "labels": [
+            "size:M"
+          ],
+          "body": "### Acceptance criteria\n- [ ] Single resolver: CLI flags \u2192 environment variables \u2192 `pr-agent.toml` \u2192 hardcoded defaults\n- [ ] Fields: `model`, `max_turns_per_pr`, `max_workers`, `dry_run`, `merge_method`, `max_fix_attempts`\n- [ ] `max_fix_attempts` is read from config, not hardcoded in the system prompt text (closes the TODO from the \"Write the merge/fix/retry policy prompt\" story)\n- [ ] Every field documented in the README config table with its default and what changing it trades off"
+        },
+        {
+          "title": "Enforce a repo allowlist at startup",
+          "labels": [
+            "safety-critical",
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "The single highest-leverage safety addition in this project: turns \"ran this in the wrong directory\" from a real risk into a refused run.\n\n### Acceptance criteria\n- [ ] Config includes an explicit list of allowed repos (owner/name)\n- [ ] The agent refuses to run \u2014 before creating any worktree or making any API call \u2014 if the target repo isn't in the allowlist\n- [ ] Fails **closed**: no allowlist configured at all means refuse everything, not warn-and-continue"
+        },
+        {
+          "title": "Add a total per-run API spend/token cap",
+          "labels": [
+            "safety-critical",
+            "size:M"
+          ],
+          "body": "`max_turns_per_pr` bounds one PR's worst case; nothing bounds a run with many PRs queued.\n\n### Acceptance criteria\n- [ ] Running token/cost total tracked across all PR agents in a run\n- [ ] Remaining PRs are skipped \u2014 reported in the summary as skipped, not silently dropped \u2014 once a configured threshold is crossed"
+        },
+        {
+          "title": "Block writes to .github/workflows/** by default",
+          "labels": [
+            "safety-critical",
+            "size:S"
+          ],
+          "body": "Extends the `write_file` tool built in the Agent Tools epic. This has to be a code-level check, not just prompt text, so it holds even if the model's reasoning goes sideways.\n\n### Acceptance criteria\n- [ ] `write_file` refuses paths under `.github/workflows/` unless an explicit override flag is set for that run\n- [ ] The refusal is a normal `is_error` tool result the model can see and react to, not a crash"
+        },
+        {
+          "title": "Decide and implement merge-timing behavior",
+          "labels": [
+            "size:M"
+          ],
+          "body": "`merge_pr`'s `--auto` means a PR can merge *after* the agent's process has already exited and reported its summary \u2014 the summary might not reflect the eventual merge state.\n\n### Acceptance criteria\n- [ ] Decision recorded (in this issue and in `ARCHITECTURE.md`): keep `--auto`, or poll checks to completion and merge synchronously instead\n- [ ] Behavior matches the decision; if synchronous, `get_pr_ci_status` polling has a sane timeout"
+        },
+        {
+          "title": "Require interactive confirmation on a repo's first live run",
+          "labels": [
+            "size:S"
+          ],
+          "body": "### Acceptance criteria\n- [ ] Outside dry-run, the first run against a given repo prints the repo name and PR count and requires an explicit confirmation before proceeding\n- [ ] Confirmation is skippable via a flag for non-interactive use once a repo is trusted"
+        }
+      ]
+    },
+    {
+      "title": "Epic: Testing & Validation",
+      "labels": [
+        "priority:P0",
+        "size:M"
+      ],
+      "depends_on": [
+        "Epic: Configuration & Safety Guardrails"
+      ],
+      "body": "The loop-level and integration-level testing that ties together the per-tool unit tests already required as acceptance criteria in the Agent Tools epic. This epic is what makes the whole thing trustworthy to point at real repos unattended, not just what makes each tool trustworthy in isolation.\n\nBlocked by Configuration & Safety Guardrails on purpose: several tests here verify the allowlist, the spend cap, and the workflow-file write-block that epic adds \u2014 they can't meaningfully pass against code that doesn't have those guardrails yet.",
+      "issues": [
+        {
+          "title": "Unit tests for agent/core.py",
+          "labels": [
+            "size:M"
+          ],
+          "body": "### Acceptance criteria\n- [ ] `openai.OpenAI` client (pointed at Hugging Face's router) mocked with scripted tool-call / no-tool-call responses\n- [ ] `max_turns` cutoff behavior asserted\n- [ ] A tool implementation raising an exception is asserted to produce a descriptive `role: \"tool\"` error result, not crash the loop\n- [ ] Structured-output extraction failure is asserted to fall back to `final_text` rather than raising"
+        },
+        {
+          "title": "Confirm the full unit test suite passes together",
+          "labels": [
+            "size:S"
+          ],
+          "body": "Each tool in the Agent Tools epic ships with its own unit tests as an acceptance criterion; this issue is the integration point that confirms they, `agent/core.py`'s tests, and everything else collected under `tests/` actually pass as one suite, not just individually.\n\n### Acceptance criteria\n- [ ] `pytest` run from a clean checkout passes with zero failures\n- [ ] No test depends on another test's execution order or leftover state (run with `pytest -p no:randomly` swapped for randomized order, or add `pytest-randomly`, to catch this)"
+        },
+        {
+          "title": "Integration test against a fixture repo",
+          "labels": [
+            "size:M"
+          ],
+          "body": "### Acceptance criteria\n- [ ] A tiny throwaway repo under `tests/fixtures/` with one deliberately failing check\n- [ ] Full loop run against it in dry-run mode\n- [ ] Final `PROutcome` asserted against the expected status"
+        },
+        {
+          "title": "Manual acceptance dry-run against a configured target repo",
+          "labels": [
+            "size:S"
+          ],
+          "body": "The repo used for this validation is a runtime parameter, not something baked into this ticket or into the code: pass it via the `--repo <path>` flag (Epic: CLI & Orchestration UX) against a repo already present in the repo allowlist (Epic: Configuration & Safety Guardrails). That's what makes this test \u2014 and the project itself \u2014 usable against more than one repo without a code change. Pick any real repo you maintain with open pull requests (`glypto` is one convenient option, not the required one) and record which repo you actually used in this issue's comments when you run it.\n\n### Acceptance criteria\n- [ ] Dry-run executed against a repo supplied via `--repo`, with that repo present in the configured allowlist \u2014 not a repo path hardcoded anywhere in the run\n- [ ] Every transcript read end-to-end; diagnosis and proposed fix for each PR confirmed correct by hand\n- [ ] Repeated against a **second**, different repo before closing this issue \u2014 a dry-run that only ever gets exercised against one familiar repo can hide behavior that's actually specific to that repo's structure or PR history\n- [ ] Findings from both runs noted here before `PR_AGENT_DRY_RUN` is ever removed for either repo"
+        },
+        {
+          "title": "Wire pytest into the pre-commit/CI hook",
+          "labels": [
+            "size:S"
+          ],
+          "body": "### Acceptance criteria\n- [ ] All tests from this epic run automatically before commit (or in whatever local hook replaces CI for this project)"
+        }
+      ]
+    },
+    {
+      "title": "Epic: Observability & Logging",
+      "labels": [
+        "priority:P1",
+        "size:M"
+      ],
+      "depends_on": [
+        "Epic: Core Agent Loop"
+      ],
+      "body": "The POC's stdout-only logging doesn't survive after the terminal closes and is unusable in --parallel mode at any real concurrency. This epic makes a run's history something you can come back to.\n\nDepends on Core Agent Loop (there's nothing to redirect into files without it) but not on the Configuration & Safety / Testing chain \u2014 pull it in alongside the P0 work rather than queuing it behind Testing.",
+      "issues": [
+        {
+          "title": "Write per-PR transcripts to runs/<timestamp>/pr-<n>.log",
+          "labels": [
+            "size:M"
+          ],
+          "body": "### Acceptance criteria\n- [ ] Each PR's full turn-by-turn transcript written to its own log file, not just printed to stdout\n- [ ] Works correctly under `--parallel` (no interleaving between PRs' log files)"
+        },
+        {
+          "title": "Write a machine-readable run summary",
+          "labels": [
+            "size:S"
+          ],
+          "body": "### Acceptance criteria\n- [ ] `runs/<timestamp>/summary.json` \u2014 list of every PR's `PROutcome`\n- [ ] Human-readable stdout summary kept alongside it"
+        },
+        {
+          "title": "Log token/cost totals per run",
+          "labels": [
+            "size:S"
+          ],
+          "body": "### Acceptance criteria\n- [ ] Total tokens and estimated cost logged and included in the run summary"
+        },
+        {
+          "title": "Make the process exit code reflect the run's outcome",
+          "labels": [
+            "size:S"
+          ],
+          "body": "### Acceptance criteria\n- [ ] Exit code `0` only if every PR ended `merged`\n- [ ] Nonzero if any PR needed human review or hit `max_turns` \u2014 this is what makes the run usable from a script without parsing log text"
+        }
+      ]
+    },
+    {
+      "title": "Epic: CLI & Orchestration UX",
+      "labels": [
+        "priority:P1",
+        "size:S"
+      ],
+      "depends_on": [
+        "Epic: Core Agent Loop"
+      ],
+      "body": "Ergonomics for running this regularly, once the underlying behavior is trustworthy.\n\nDepends on Core Agent Loop (the orchestrator wraps it) but not on Configuration & Safety or Testing \u2014 parallel-safe with both.",
+      "issues": [
+        {
+          "title": "Add --repo <path> flag",
+          "labels": [
+            "size:S"
+          ],
+          "body": "### Acceptance criteria\n- [ ] Runnable from anywhere, not just from inside a checkout (replaces the current assumption of `cwd`)\n- [ ] This is the **only** mechanism for selecting a target repo, for both real runs and the acceptance dry-run testing in the Testing & Validation epic \u2014 no repo path or name hardcoded anywhere else in the codebase or tests"
+        },
+        {
+          "title": "Add explicit --dry-run / --live CLI flags",
+          "labels": [
+            "size:S"
+          ],
+          "body": "### Acceptance criteria\n- [ ] CLI flags in addition to the existing `PR_AGENT_DRY_RUN` env var, which stays for non-interactive use\n- [ ] CLI flag wins if both are set, and the run prints which mode it resolved to"
+        },
+        {
+          "title": "Add --pr <number> to target a single PR",
+          "labels": [
+            "size:S"
+          ],
+          "body": "### Acceptance criteria\n- [ ] Runs the full loop against exactly one PR, for debugging or re-running one case without reprocessing the whole queue"
+        },
+        {
+          "title": "Make re-runs after a partial failure clean",
+          "labels": [
+            "size:M"
+          ],
+          "body": "### Acceptance criteria\n- [ ] A worktree left over from a previous crashed run is reclaimed automatically instead of causing the next `git worktree add` to error"
+        }
+      ]
+    },
+    {
+      "title": "Epic: Documentation",
+      "labels": [
+        "priority:P2",
+        "size:S"
+      ],
+      "depends_on": [
+        "Epic: Repository & Environment Setup"
+      ],
+      "body": "Lands last on purpose \u2014 documenting behavior before it's stabilized just means rewriting the docs later.\n\nOnly hard-blocked by Setup, same as the other P1/P2 epics \u2014 \"lands last\" here is a recommendation in PROJECT_PLAN.md \u00a714, not a GitHub-enforced block, since there's real value in drafting docs early even if they get rewritten.",
+      "issues": [
+        {
+          "title": "Finalize README",
+          "labels": [
+            "size:S"
+          ],
+          "body": "### Acceptance criteria\n- [ ] Quickstart, full config table, and the safety model section kept accurate as of the current codebase\n- [ ] Someone who isn't the author can follow it to a working run in under 15 minutes (test this literally)"
+        },
+        {
+          "title": "Write ARCHITECTURE.md",
+          "labels": [
+            "size:S"
+          ],
+          "body": "### Acceptance criteria\n- [ ] Explains the core/tools/prompts/schemas/orchestrator split and why each boundary exists\n- [ ] Records the merge-timing decision from the Configuration & Safety Guardrails epic"
+        },
+        {
+          "title": "Write RUNBOOK.md",
+          "labels": [
+            "size:S"
+          ],
+          "body": "### Acceptance criteria\n- [ ] Covers what to do when a run reports `needs_human_review`: where the transcript is, what to check in it, how to manually finish that PR"
+        }
+      ]
+    }
+  ],
+  "release_validation_issue": {
+    "title": "Release validation: full local end-to-end run",
+    "labels": [
+      "priority:P0",
+      "size:S"
+    ],
+    "body": "The actual ship-it milestone. Do not close until every item below is checked against a real run, not a plan.\n\n### Acceptance criteria\n- [ ] Full dry-run against a configured target repo's open PR queue (selected via `--repo`, same mechanism as the acceptance dry-run in Testing & Validation), every outcome reviewed and correct\n- [ ] Full **live** run, sequential mode: at least one green-CI merge and one fix-and-merge cycle completed correctly\n- [ ] Full live run in `--parallel` mode: worktrees created, used, and cleaned up correctly under real concurrency\n- [ ] Immediate re-run after a completed run is idempotent \u2014 no already-merged PRs reprocessed, no leftover worktrees cause errors\n- [ ] Pointed at a second, unrelated repo via config only (no code changes) and the dry-run check repeated successfully there"
+  }
+}
