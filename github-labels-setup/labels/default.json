@@ -1,0 +1,11 @@
+[
+  {"name": "epic", "color": "5319E7", "description": "A tracked body of work with child issues"},
+  {"name": "task", "color": "0E8A16", "description": "A single actionable unit of work"},
+  {"name": "safety-critical", "color": "B60205", "description": "Touches the merge/push/allowlist safety boundary"},
+  {"name": "priority:P0", "color": "D93F0B", "description": "Blocks the v1 release milestone"},
+  {"name": "priority:P1", "color": "FBCA04", "description": "Should land before v1, not release-blocking"},
+  {"name": "priority:P2", "color": "C5DEF5", "description": "Nice to have / stretch"},
+  {"name": "size:S", "color": "C2E0C6", "description": "About one session"},
+  {"name": "size:M", "color": "FEF2C0", "description": "About two to three sessions"},
+  {"name": "size:L", "color": "F9D0C4", "description": "Open-ended, may need its own breakdown"}
+]
