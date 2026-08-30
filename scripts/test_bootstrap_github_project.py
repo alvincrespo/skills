@@ -137,7 +137,7 @@ class MainFlowTests(unittest.TestCase):
 
         def side_effect(cmd, capture_output=True, text=True):
             calls.append(cmd)
-            if cmd[:3] == ["gh", "label", "create"]:
+            if cmd[:2] == [sys.executable, str(bgp.ENSURE_LABELS_SCRIPT)]:
                 return _completed()
             if cmd[:4] == ["gh", "api", "--method", "GET"]:
                 return _completed("[]")
@@ -171,6 +171,19 @@ class MainFlowTests(unittest.TestCase):
                          side_effect=self._gh_side_effect(calls)):
             bgp.main()
 
+        # Labels: no hardcoded label data left in this script -- it shells
+        # out to github-labels-setup's ensure_labels.py, defaulting
+        # --labels-file to that skill's own labels/default.json.
+        label_calls = [c for c in calls if c[:2] == [sys.executable, str(bgp.ENSURE_LABELS_SCRIPT)]]
+        self.assertEqual(len(label_calls), 1)
+        label_call = label_calls[0]
+        self.assertEqual(label_call[0], sys.executable)
+        self.assertEqual(label_call[1], str(bgp.ENSURE_LABELS_SCRIPT))
+        self.assertIn("--repo", label_call)
+        self.assertEqual(label_call[label_call.index("--repo") + 1], "acme/widgets")
+        self.assertIn("--labels-file", label_call)
+        self.assertEqual(label_call[label_call.index("--labels-file") + 1], str(bgp.DEFAULT_LABELS_FILE))
+
         create_calls = [c for c in calls if c[:3] == ["gh", "issue", "create"]]
         # epic + 1 child issue + release validation issue = 3 issue creates
         self.assertEqual(len(create_calls), 3)
@@ -197,6 +210,25 @@ class MainFlowTests(unittest.TestCase):
         # release validation issue is linked as blocked-by every epic
         edit_calls = [c for c in calls if c[:3] == ["gh", "issue", "edit"]]
         self.assertTrue(any("--add-blocked-by" in c for c in edit_calls))
+
+    def test_explicit_labels_file_flag_is_passed_through(self) -> None:
+        data_path = self._write_data(SAMPLE_DATA)
+        custom_labels_path = self._write_data([])  # content doesn't matter, only the path
+        calls: list = []
+        argv = ["bootstrap_github_project.py", "--repo", "acme/widgets", "--data", data_path,
+                "--labels-file", custom_labels_path]
+        with mock.patch.object(sys, "argv", argv), \
+             mock.patch("bootstrap_github_project.subprocess.run",
+                         side_effect=self._gh_side_effect(calls)):
+            bgp.main()
+
+        label_calls = [c for c in calls if c[:2] == [sys.executable, str(bgp.ENSURE_LABELS_SCRIPT)]]
+        self.assertEqual(len(label_calls), 1)
+        label_call = label_calls[0]
+        self.assertIn("--labels-file", label_call)
+        self.assertEqual(label_call[label_call.index("--labels-file") + 1], custom_labels_path)
+        # explicit --labels-file must override the default, not merely add to it
+        self.assertNotEqual(label_call[label_call.index("--labels-file") + 1], str(bgp.DEFAULT_LABELS_FILE))
 
     def test_malformed_data_rejected_before_any_gh_call(self) -> None:
         bad_data = {"milestone": {"title": "x"}}  # missing description + other top-level keys

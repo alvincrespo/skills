@@ -6,7 +6,8 @@ Bootstrap a GitHub repo + Project (v2) from a --data JSON file.
     gh auth refresh -s project      # project scope isn't in gh's default scopes
     gh repo create <owner>/pr-agent --private --clone
     cd pr-agent
-    python scripts/bootstrap_github_project.py --repo <owner>/pr-agent --data plan.json
+    python scripts/bootstrap_github_project.py --repo <owner>/pr-agent --data plan.json \
+        [--labels-file path/to/labels.json]
 
 The --data file is a JSON object with three top-level keys:
 
@@ -27,7 +28,11 @@ list is read in order, and each dependency is expected to already exist by
 the time it's referenced (see step 4 below).
 
 What it does, in order:
-  1. Creates (or updates, via --force) a small set of labels.
+  1. Creates (or updates, via --force) a small set of labels, by shelling
+     out to github-labels-setup/scripts/ensure_labels.py with the file
+     given via --labels-file (or that skill's own labels/default.json if
+     --labels-file is omitted) -- this script owns no label taxonomy data
+     of its own.
   2. Creates the milestone named in "milestone", or reuses it if a
      milestone with that title already exists.
   3. Creates (or reuses) a GitHub Project (v2) named after --project-title,
@@ -161,22 +166,19 @@ def load_data(data_file: str) -> dict:
     return data
 
 
-def ensure_labels(owner: str, repo: str) -> None:
-    labels = [
-        ("epic", "5319E7", "A tracked body of work with child issues"),
-        ("task", "0E8A16", "A single actionable unit of work"),
-        ("safety-critical", "B60205", "Touches the merge/push/allowlist safety boundary"),
-        ("priority:P0", "D93F0B", "Blocks the v1 release milestone"),
-        ("priority:P1", "FBCA04", "Should land before v1, not release-blocking"),
-        ("priority:P2", "C5DEF5", "Nice to have / stretch"),
-        ("size:S", "C2E0C6", "About one session"),
-        ("size:M", "FEF2C0", "About two to three sessions"),
-        ("size:L", "F9D0C4", "Open-ended, may need its own breakdown"),
-    ]
-    for name, color, desc in labels:
-        run(["gh", "label", "create", name, "--repo", f"{owner}/{repo}",
-             "--color", color, "--description", desc, "--force"])
-    print(f"  labels: {len(labels)} ensured")
+ENSURE_LABELS_SCRIPT = Path(__file__).parent.parent / "github-labels-setup" / "scripts" / "ensure_labels.py"
+DEFAULT_LABELS_FILE = Path(__file__).parent.parent / "github-labels-setup" / "labels" / "default.json"
+
+
+def ensure_labels(owner: str, repo: str, labels_file: Path) -> None:
+    # Label taxonomy data (names/colors/descriptions) lives in exactly one
+    # place: github-labels-setup/labels/default.json (or whatever file
+    # --labels-file points at), owned and applied by that skill's own
+    # ensure_labels.py. This just shells out to it rather than duplicating
+    # any of that data here.
+    run([sys.executable, str(ENSURE_LABELS_SCRIPT),
+         "--repo", f"{owner}/{repo}", "--labels-file", str(labels_file)])
+    print(f"  labels: ensured from {labels_file}")
 
 
 def ensure_milestone(owner: str, repo: str, title: str, description: str) -> int:
@@ -307,6 +309,11 @@ def main() -> None:
                               "NEVER hardcode a specific project name as the default here again; "
                               "that's exactly what caused one repo's issues to land in another "
                               "repo's project board.")
+    parser.add_argument("--labels-file", default=None,
+                         help="Path to a JSON file listing label objects "
+                              "({name, color, description}), passed through to "
+                              "github-labels-setup/scripts/ensure_labels.py. Defaults to that "
+                              "skill's own labels/default.json if not given.")
     args = parser.parse_args()
 
     try:
@@ -321,12 +328,13 @@ def main() -> None:
 
     owner, repo = args.repo.split("/", 1)
     project_title = args.project_title or repo
+    labels_file = Path(args.labels_file) if args.labels_file else DEFAULT_LABELS_FILE
     issue_url = lambda n: f"https://github.com/{owner}/{repo}/issues/{n}"  # noqa: E731
 
     print(f"Bootstrapping {owner}/{repo}...\n")
 
     print("Labels:")
-    ensure_labels(owner, repo)
+    ensure_labels(owner, repo, labels_file)
 
     print("\nMilestone:")
     milestone_number = ensure_milestone(owner, repo, milestone["title"], milestone["description"])
