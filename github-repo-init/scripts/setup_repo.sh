@@ -4,17 +4,65 @@
 # epic/story issues.
 #
 # Run from inside this project directory (the one containing this
-# scripts/ folder, tracker/, docs/, README.md, etc.) — not from an
-# empty directory.
+# github-repo-init/scripts/ folder, tracker/, docs/, README.md, etc.) —
+# not from an empty directory.
 #
-#   ./scripts/setup_repo.sh <owner>/skills
+#   ./github-repo-init/scripts/setup_repo.sh <owner>/repo-name \
+#       [--description "..."] [--topics "a,b,c"]
+#
+#   --description <text>   Repo description passed to `gh repo create`.
+#                           Default: "A small, growing collection of
+#                           Claude Skills for real engineering workflows."
+#   --topics <a,b,c>        Comma-separated topics passed to
+#                           `gh repo edit --add-topic`.
+#                           Default: claude-skills,claude-code,
+#                           ai-agent-tooling,github-automation
+#
+# Omitting either flag falls back to its documented default above rather
+# than erroring.
 #
 # Requires: gh CLI, authenticated (gh auth login), git, python3.
 
 set -euo pipefail
 
-REPO="${1:?Usage: ./scripts/setup_repo.sh <owner>/repo-name}"
+usage() {
+  echo "Usage: $0 <owner>/repo-name [--description \"...\"] [--topics \"a,b,c\"]" >&2
+  exit 1
+}
+
 DESCRIPTION="A small, growing collection of Claude Skills for real engineering workflows."
+TOPICS="claude-skills,claude-code,ai-agent-tooling,github-automation"
+REPO=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --description)
+      DESCRIPTION="${2:?--description requires a value}"
+      shift 2
+      ;;
+    --topics)
+      TOPICS="${2:?--topics requires a value}"
+      shift 2
+      ;;
+    -h|--help)
+      usage
+      ;;
+    -*)
+      echo "Unknown option: $1" >&2
+      usage
+      ;;
+    *)
+      if [ -n "$REPO" ]; then
+        echo "Unexpected argument: $1" >&2
+        usage
+      fi
+      REPO="$1"
+      shift
+      ;;
+  esac
+done
+
+[ -n "$REPO" ] || usage
 
 echo "==> Checking for uncommitted local git history"
 if [ -d .git ]; then
@@ -34,11 +82,12 @@ gh repo create "${REPO}" \
   --push
 
 echo "==> Setting repository topics"
-gh repo edit "${REPO}" \
-  --add-topic claude-skills \
-  --add-topic claude-code \
-  --add-topic ai-agent-tooling \
-  --add-topic github-automation
+IFS=',' read -ra TOPIC_LIST <<< "${TOPICS}"
+TOPIC_ARGS=()
+for topic in "${TOPIC_LIST[@]}"; do
+  TOPIC_ARGS+=(--add-topic "${topic}")
+done
+gh repo edit "${REPO}" "${TOPIC_ARGS[@]}"
 
 echo "==> Requesting the 'project' OAuth scope (needed to create/populate a Project v2 board)"
 gh auth refresh -s project
