@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Creates the alvincrespo/skills GitHub repository from this directory's
-# contents, then bootstraps labels, milestone, project board, and all 34
-# epic/story issues.
+# contents, pushes it, and sets its topics. Ends there — run the
+# github-labels-setup skill next to set up the repo's label taxonomy.
 #
 # Run from inside this project directory (the one containing this
 # github-repo-init/scripts/ folder, tracker/, docs/, README.md, etc.) —
@@ -21,7 +21,7 @@
 # Omitting either flag falls back to its documented default above rather
 # than erroring.
 #
-# Requires: gh CLI, authenticated (gh auth login), git, python3.
+# Requires: gh CLI, authenticated (gh auth login), git.
 
 set -euo pipefail
 
@@ -89,15 +89,12 @@ for topic in "${TOPIC_LIST[@]}"; do
 done
 gh repo edit "${REPO}" "${TOPIC_ARGS[@]}"
 
-echo "==> Requesting the 'project' OAuth scope (needed to create/populate a Project v2 board)"
-gh auth refresh -s project
-
-echo "==> Bootstrapping labels, milestone, project board, and all epics/issues"
-python3 scripts/bootstrap_github_project.py --repo "${REPO}"
-
 echo ""
-echo "==> Done."
+echo "==> Repo ready."
 echo "    Repo:    https://github.com/${REPO}"
+echo ""
+echo "Next: run the github-labels-setup skill to set up this repo's label"
+echo "taxonomy."
 echo ""
 echo "Still manual, on purpose:"
 echo "  - Branch protection on main (no CI check to require yet)"
