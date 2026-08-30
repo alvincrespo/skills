@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/alvincrespo/skills/github-project-bootstrap/references/epic-schema.schema.json",
+  "title": "github-project-bootstrap epics/stories data file",
+  "description": "Portable replacement for tracker/issues.py's MILESTONE, EPICS, and RELEASE_VALIDATION_ISSUE module attributes, consumed by scripts/bootstrap_github_project.py via a --data <path.json> argument (see epic-schema.md). LIMITATION: this schema validates shape only (types, required fields, that `depends_on` is an array of strings). It cannot express the ordering constraint that every epics[].depends_on entry must name the `title` of an epic appearing at an earlier index in the `epics` array (never itself, never a later one) -- JSON Schema has no keyword that compares a value against sibling elements of another array by position. That constraint must be checked separately by the code that loads this file (see epic-schema.md's \"What JSON Schema can validate here vs. what it can't\" section); a schema-valid document can still violate it.",
+  "type": "object",
+  "required": ["milestone", "epics", "release_validation_issue"],
+  "additionalProperties": false,
+  "properties": {
+    "milestone": {
+      "type": "object",
+      "description": "The single GitHub milestone every epic and issue is filed under. Looked up by title and reused if it already exists; created via `gh api POST repos/{owner}/{repo}/milestones` if not.",
+      "required": ["title", "description"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact milestone title, e.g. \"v1 -- Four Skills Shipped & Shareable\". Used both to look up an existing milestone and, via --milestone, as the value every created issue is filed under."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Milestone description body."
+        }
+      }
+    },
+    "epics": {
+      "type": "array",
+      "description": "Ordered list of epics, created as GitHub issues in array order. Order is load-bearing: see epic-schema.md's ordering-constraint section. Each epics[].depends_on entry must name the `title` of an epic that appears earlier in this same array -- a constraint this schema cannot enforce (see this schema's top-level `description`).",
+      "items": { "$ref": "#/$defs/epic" }
+    },
+    "release_validation_issue": {
+      "$ref": "#/$defs/labeledIssue",
+      "description": "The single standalone issue created last and linked as blocked-by every epic issue. Same shape as a child issue (title/labels/body) -- it has no `depends_on` or `issues` of its own."
+    }
+  },
+  "$defs": {
+    "epic": {
+      "type": "object",
+      "description": "One epic: created as an issue labeled `epic` plus any of its own `labels`, then its `issues` are created as GitHub sub-issues of it (`gh issue create --parent`).",
+      "required": ["title", "body", "issues"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact epic issue title, e.g. \"Epic: Skill -- github-project-bootstrap\". Referenced verbatim by other epics' `depends_on` entries, so it must match exactly wherever it's cited."
+        },
+        "labels": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": [],
+          "description": "Additional labels layered on top of the literal `epic` label the bootstrap script always adds. Optional; omitted or empty means no labels beyond `epic`."
+        },
+        "depends_on": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": [],
+          "description": "Titles of other epics this epic is blocked by (`gh issue edit --add-blocked-by`). Each title must exactly match another epic's `title` earlier in the enclosing `epics` array -- never this epic's own title, never a later epic's. Not enforceable by JSON Schema; see this schema's top-level `description`. Optional; omitted or empty means this epic has no epic-level blockers."
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Issue body markdown for the epic."
+        },
+        "issues": {
+          "type": "array",
+          "description": "Child story issues, created as GitHub sub-issues of this epic. May be empty, but the key itself is required.",
+          "items": { "$ref": "#/$defs/labeledIssue" }
+        }
+      }
+    },
+    "labeledIssue": {
+      "type": "object",
+      "description": "A single leaf issue: a child story under an epic, or the top-level release_validation_issue.",
+      "required": ["title", "body"],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Exact issue title."
+        },
+        "labels": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "default": [],
+          "description": "Additional labels. For a child issue under an epic, these are layered on top of the literal `task` label the bootstrap script always adds; release_validation_issue gets no such automatic label, so its `labels` list is applied as-is. Optional; omitted or empty means no additional labels."
+        },
+        "body": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Issue body markdown."
+        }
+      }
+    }
+  }
+}
