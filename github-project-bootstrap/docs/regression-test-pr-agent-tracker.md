@@ -1,7 +1,16 @@
-# Regression test: `pr-agent`'s tracker converted to the JSON schema (read-only)
+# Regression test: `pr-agent`'s tracker converted to the JSON schema
 
-**Date:** 2026-08-30
+**Date:** 2026-08-30 (converted/verified read-only); **live run confirmed 2026-08-31**
 **Issue:** [#11 — "Regression-test: convert pr-agent's tracker data to JSON"](https://github.com/alvincrespo/skills/issues/11)
+
+> **Update, 2026-08-31:** the repo owner ran the mutating live-run command
+> themselves, by hand, against a disposable `alvincrespo/skills-test` repo.
+> It produced the predicted 51 issues with a matching dependency graph —
+> see [Live run confirmation](#live-run-confirmation-2026-08-31) at the end
+> of this document. Both of issue #11's acceptance-criteria bullets are now
+> satisfied. The rest of this document, below, is left as originally
+> written (read-only conversion + structural-parity prediction, before the
+> live run happened) for an accurate record of what was verified when.
 
 ## Scope of this check
 
@@ -194,10 +203,11 @@ top-level shape matches the target schema: `milestone` (keys `title`,
 - Issue #11's second acceptance-criteria bullet — "Run the converted
   script against a disposable test repo... and confirm it produces the
   same 51 issues, the same dependency graph, and the same blocked-by
-  links" — is **not** being marked done by this document. That mutating
-  run (including creating the disposable repo itself) was intentionally
-  left for the repo owner to run by hand, per the standing feedback cited
-  above.
+  links" — was **not** being marked done by this document as originally
+  written. That mutating run (including creating the disposable repo
+  itself) was intentionally left for the repo owner to run by hand, per
+  the standing feedback cited above. **It has since been run — see
+  [Live run confirmation](#live-run-confirmation-2026-08-31) below.**
 
 ## Manual command left for the repo owner
 
@@ -219,3 +229,85 @@ confirming that expected outcome actually holds — is what would satisfy
 issue #11's second acceptance-criteria bullet. This PR only gets you the
 converted data plus the structural-parity prediction; it does not itself
 satisfy that bullet, mirroring the relationship PR #38 had to issue #5.
+
+## Live run confirmation (2026-08-31)
+
+By this point `main` had #7/#8/#9 merged, so `--data` and `--labels-file`
+were both available on `scripts/bootstrap_github_project.py`. The repo
+owner ran the command below themselves, by hand, against a fresh
+disposable repo (`alvincrespo/skills-test`):
+
+```bash
+python scripts/bootstrap_github_project.py --repo alvincrespo/skills-test --data github-project-bootstrap/docs/pr-agent-tracker.json
+```
+
+### Outcome
+
+- **Labels:** ensured from `github-labels-setup/labels/default.json` — no
+  errors.
+- **Milestone:** created `#1 "v1 — Local End-to-End Run"`.
+- **Project:** created and linked `#8 "skills-test"`.
+- **Issues:** all 8 epics and their child issues created, followed by the
+  release-validation issue as `#51`. Final line of output: `Done. 51 issues
+  ensured across 8 epics.` — matching the structural-parity prediction
+  above exactly.
+
+### Dependency graph confirmed
+
+The `blocked by:` lines the script printed while creating each epic match
+the `depends_on` table above exactly:
+
+| Epic | `blocked by:` printed |
+|---|---|
+| Epic: Repository & Environment Setup | *(none — first epic, no dependencies)* |
+| Epic: Core Agent Loop | Epic: Repository & Environment Setup |
+| Epic: Agent Tools | Epic: Repository & Environment Setup |
+| Epic: Configuration & Safety Guardrails | Epic: Core Agent Loop, Epic: Agent Tools |
+| Epic: Testing & Validation | Epic: Configuration & Safety Guardrails |
+| Epic: Observability & Logging | Epic: Core Agent Loop |
+| Epic: CLI & Orchestration UX | Epic: Core Agent Loop |
+| Epic: Documentation | Epic: Repository & Environment Setup |
+
+On the GitHub UI, this shows up as a "Blocked" badge on every epic issue
+that has an unresolved `depends_on` (e.g. `Epic: Documentation` and the
+release-validation issue `#51`), and as `N / M` sub-issue-completion
+counters matching each epic's child-issue count (e.g. `Epic: Documentation`
+shows `0 / 3`, matching its 3 child issues in the table earlier in this
+document).
+
+### Label counts as an independent cross-check
+
+`alvincrespo/skills-test`'s Labels page shows 19 labels total: the 9
+custom labels from `github-labels-setup/labels/default.json` plus GitHub's
+10 stock defaults. Per-label issue counts on the 9 custom labels are a
+second, independent confirmation of the epic/issue totals predicted above,
+since every issue carries exactly one of `epic`/`task` plus zero or more
+`priority:*`/`size:*` labels:
+
+| Label | Count | Cross-check |
+|---|---|---|
+| `epic` | 8 | matches 8 epics |
+| `task` | 42 | matches 42 child issues |
+| `safety-critical` | 6 | |
+| `priority:P0` | 7 | |
+| `priority:P1` | 2 | |
+| `priority:P2` | 1 | |
+| `size:S` | 33 | |
+| `size:M` | 16 | |
+| `size:L` | 2 | |
+
+`epic` (8) and `task` (42) landing exactly on the predicted epic/child-issue
+counts, from a completely independent source (GitHub's own per-label issue
+count, not this document's conversion script), is strong additional
+evidence the live run matches the structural-parity prediction — not just
+the total issue count, but which issues got which role.
+
+### Conclusion
+
+Both of issue #11's acceptance-criteria bullets are now satisfied:
+`alvincrespo/pr-agent`'s tracker was converted to the JSON schema
+(`github-project-bootstrap/docs/pr-agent-tracker.json`, verified above),
+and the converted script was run against a disposable test repo
+(`alvincrespo/skills-test`, not the real `alvincrespo/pr-agent`), producing
+the same 51 issues, the same dependency graph, and the same blocked-by
+links predicted by the structural-parity check.
