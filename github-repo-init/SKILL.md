@@ -7,7 +7,7 @@ disable-model-invocation: true
 # GitHub Repo Init
 
 Create a GitHub repository from the current directory's contents, push it,
-and set its topics — via `github-repo-init/scripts/setup_repo.sh`.
+and set its topics — via this skill's `scripts/setup_repo.sh`.
 
 Per `docs/adr/0002-invocation-control-on-github-actions.md`, this skill is
 marked `disable-model-invocation: true`: it creates a real, externally
@@ -18,12 +18,13 @@ it when a human explicitly asks, in so many words, in the current turn.
 
 ## Invocation
 
-Run from inside the project directory to be published — the one
-containing this `github-repo-init/scripts/` folder and the rest of the
-project's contents. Not from an empty directory.
+Run with the project to be published as the current working directory
+— not from an empty directory, and not from this skill's own folder. Call
+the script by its path inside this skill, where `<skill-dir>` is this
+skill's base directory (the folder containing this `SKILL.md`):
 
 ```bash
-./github-repo-init/scripts/setup_repo.sh <owner>/repo-name \
+<skill-dir>/scripts/setup_repo.sh <owner>/repo-name \
     [--description "..."] [--topics "a,b,c"]
 ```
 
@@ -40,7 +41,9 @@ Repo description passed to `gh repo create --description`.
 ### `--topics`
 
 Comma-separated topics passed to `gh repo edit --add-topic` (one
-`--add-topic` per entry).
+`--add-topic` per entry). Whitespace around each entry is trimmed and empty
+entries are dropped; a list with no non-empty topics is rejected before
+anything is created.
 
 - Default: `claude-skills,claude-code,ai-agent-tooling,github-automation`
 
@@ -49,23 +52,28 @@ than erroring.
 
 ## What the script does
 
-1. Checks for an existing `.git` in the current directory. If none exists,
-   runs `git init`, `git add -A`, and an initial commit
-   (`Initial commit: skills repo scaffolding + tracker`). If `.git`
-   already exists, it's used as-is — not re-initialized.
+1. Checks local git state *before* creating anything on GitHub (because
+   `gh repo create` creates the remote repo first, a later local failure
+   would leave an empty repo behind):
+   - No `.git`: runs `git init`, `git add -A`, and an initial commit
+     (`Initial commit`).
+   - Existing `.git`: used as-is, not re-initialized. The script exits
+     with an error if it has no commits yet or already has an `origin`
+     remote. Uncommitted changes produce a warning — they are not pushed,
+     so commit anything that should be published first.
 2. Runs `gh repo create <owner>/repo-name --public --description "..."
    --source=. --remote=origin --push`, creating the repo from the current
    directory's contents and pushing it in one step.
 3. Runs `gh repo edit <owner>/repo-name` with one `--add-topic` per entry
    in `--topics`, setting the repo's topics.
 4. Prints the new repo's URL, a pointer to run the `github-labels-setup`
-   skill next, and the manual-follow-up items below.
+   skill next, and the manual follow-up items below.
 
 Requires the `gh` CLI (authenticated) and `git`.
 
 ## Manual follow-up (intentionally not automated)
 
-The script's final output calls out three things it deliberately does
+The script's final output calls out two things it deliberately does
 *not* do:
 
 - **Branch protection on `main`** — not set up, since there's no CI check
@@ -73,10 +81,6 @@ The script's final output calls out three things it deliberately does
 - **A pre-push secret scan** of the initial commit (e.g. `gitleaks` or
   `trufflehog`) — run this yourself before trusting the content is safe on
   a public remote.
-- **`.claude-plugin/plugin.json` and `marketplace.json`** — deliberately
-  not created here. Their schema needs confirming against current Claude
-  Code plugin documentation, not assumed from memory or a similar-looking
-  example; that's a separate, later piece of work.
 
 These stay manual on purpose rather than being folded into the script.
 
