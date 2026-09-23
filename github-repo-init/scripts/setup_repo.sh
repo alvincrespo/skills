@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Creates the alvincrespo/skills GitHub repository from this directory's
+# Creates a new GitHub repository from the current directory's
 # contents, pushes it, and sets its topics. Ends there — run the
 # github-labels-setup skill next to set up the repo's label taxonomy.
 #
@@ -130,7 +130,3 @@ echo "Still manual, on purpose:"
 echo "  - Branch protection on main (no CI check to require yet)"
 echo "  - A pre-push secret scan of the initial commit (gitleaks or trufflehog)"
 echo "    before you trust this content is safe on a public remote"
-echo "  - .claude-plugin/plugin.json and marketplace.json — deliberately NOT"
-echo "    created by this script. See the 'Create plugin manifests and"
-echo "    validate' issue: the schema needs confirming against current"
-echo "    Claude Code docs, not assumed from memory."
