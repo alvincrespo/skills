@@ -1,9 +1,10 @@
 # Verification checklist: `setup_repo.sh` end-to-end (read-only)
 
-**Date:** 2026-08-30
+**Date:** 2026-08-30 (re-run 2026-09-23 after the preflight fixes)
 **Issue:** [#16 — "Verify against a fresh throwaway repo end-to-end"](https://github.com/alvincrespo/skills/issues/16)
-**Script verified:** `github-repo-init/scripts/setup_repo.sh` as it exists on
-`issue-14-remove-bootstrap-chain-call` (commit `641df49`).
+**Script verified:** `github-repo-init/scripts/setup_repo.sh` as it exists at the tip of
+the #43 → #44 PR stack, including the local-git preflight and `--topics`
+validation added during review.
 
 ## Scope of this check
 
@@ -87,7 +88,7 @@ Exit code: `0`. Captured stub invocations:
 ```
 STUB git init
 STUB git add -A
-STUB git commit -m Initial commit: skills repo scaffolding + tracker
+STUB git commit -m Initial commit
 STUB gh repo create testowner/throwaway-repo-1 --public --description A small, growing collection of Claude Skills for real engineering workflows. --source=. --remote=origin --push
 STUB gh repo edit testowner/throwaway-repo-1 --add-topic claude-skills --add-topic claude-code --add-topic ai-agent-tooling --add-topic github-automation
 ```
@@ -109,7 +110,7 @@ Exit code: `0`. Captured stub invocations:
 ```
 STUB git init
 STUB git add -A
-STUB git commit -m Initial commit: skills repo scaffolding + tracker
+STUB git commit -m Initial commit
 STUB gh repo create testowner/throwaway-repo-2 --public --description A disposable end-to-end test repo --source=. --remote=origin --push
 STUB gh repo edit testowner/throwaway-repo-2 --add-topic smoke-test --add-topic disposable
 ```
@@ -129,7 +130,7 @@ Exit code: `0`. Captured stub invocations:
 ```
 STUB git init
 STUB git add -A
-STUB git commit -m Initial commit: skills repo scaffolding + tracker
+STUB git commit -m Initial commit
 STUB gh repo create testowner/throwaway-repo-3 --public --description A small, growing collection of Claude Skills for real engineering workflows. --source=. --remote=origin --push
 STUB gh repo edit testowner/throwaway-repo-3 --add-topic smoke-test --add-topic disposable
 ```
@@ -148,7 +149,7 @@ Exit code: `0`. Captured stub invocations:
 ```
 STUB git init
 STUB git add -A
-STUB git commit -m Initial commit: skills repo scaffolding + tracker
+STUB git commit -m Initial commit
 STUB gh repo create testowner/throwaway-repo-4 --public --description A disposable end-to-end test repo --source=. --remote=origin --push
 STUB gh repo edit testowner/throwaway-repo-4 --add-topic claude-skills --add-topic claude-code --add-topic ai-agent-tooling --add-topic github-automation
 ```
@@ -163,13 +164,66 @@ $ setup_repo.sh
 ```
 
 Exit code: `1`. Stub log: empty (no `gh`/`git` call was made — `usage()`
-exits before either is invoked). Stdout:
+exits before either is invoked). Stderr (`--help` prints the same line
+to stdout and exits `0` instead):
 
 ```
 Usage: setup_repo.sh <owner>/repo-name [--description "..."] [--topics "a,b,c"]
 ```
 
 Confirms the required-argument guard fails closed with no side effects.
+
+### Scenario 6 — messy `--topics` (whitespace, empty entries, trailing comma)
+
+```
+$ setup_repo.sh testowner/throwaway-repo-6 --topics " smoke-test , ,disposable,"
+```
+
+Exit code: `0`. Captured stub invocations:
+
+```
+STUB git init
+STUB git add -A
+STUB git commit -m Initial commit
+STUB gh repo create testowner/throwaway-repo-6 --public --description A small, growing collection of Claude Skills for real engineering workflows. --source=. --remote=origin --push
+STUB gh repo edit testowner/throwaway-repo-6 --add-topic smoke-test --add-topic disposable
+```
+
+Confirms: whitespace around each entry is trimmed and empty entries are
+dropped, so no `--add-topic ""` or `--add-topic " disposable"` reaches
+`gh`.
+
+### Scenario 7 — `--topics` with no usable entries
+
+```
+$ setup_repo.sh testowner/throwaway-repo-7 --topics ", ,"
+```
+
+Exit code: `1`. Stub log: empty. Stderr:
+
+```
+Error: --topics contained no non-empty topics
+```
+
+Confirms the topic list is validated before `gh repo create`, so a bad
+list can't leave a created-but-untopiced repo behind.
+
+### Scenarios 8–10 — preflight against an existing `.git` (real `git`)
+
+The stubbed `git` above exits `0` for everything, so it can't exercise the
+existing-repo checks. These three used the real `git` in a throwaway temp
+repo, with only `gh` stubbed:
+
+| # | Temp repo state | Exit | Output | `gh` calls |
+|---|---|---|---|---|
+| 8 | one commit + `origin` remote already set | `1` | `Error: an 'origin' remote already exists (https://github.com/testowner/existing.git); remove or rename it first` | none |
+| 9 | `git init`, no commits | `1` | `Error: this repository has no commits yet; commit something before publishing` | none |
+| 10 | one commit + an uncommitted edit | `0` | `Warning: uncommitted changes present — they will NOT be pushed.` | `repo create`, `repo edit` (defaults) |
+
+These matter because `gh repo create --source=. --remote=origin --push`
+creates the GitHub repo *before* it adds the local remote and pushes. A
+pre-existing `origin` or an empty history would otherwise fail only after
+an empty repo already existed on GitHub.
 
 ### What this does and does not verify
 
@@ -196,11 +250,20 @@ verification, and cleanup — is still the owner's to do.
 
 ## Commands for the repo owner to run by hand
 
-To actually complete issue #16's acceptance criteria, from inside this
-project directory (the one containing `github-repo-init/scripts/`), once
-`setup_repo.sh` has landed on `main`:
+To actually complete issue #16's acceptance criteria, once
+`setup_repo.sh` has landed on `main`. Don't run the script from this
+checkout directly: it already has an `origin` remote (pointing at
+`alvincrespo/skills`), which the preflight rejects (scenario 8). Publish
+a clean clone with its remote removed instead:
 
 ```bash
+# 0. Make a clean copy of this project with no origin remote.
+#    Run from inside this project directory, on an up-to-date main.
+tmp="$(mktemp -d)"
+git clone --quiet --no-local . "$tmp/skills-throwaway-verify"
+git -C "$tmp/skills-throwaway-verify" remote remove origin
+cd "$tmp/skills-throwaway-verify"
+
 # 1. Create the disposable throwaway repo and push this content to it.
 #    Replace <owner> with your GitHub username/org.
 ./github-repo-init/scripts/setup_repo.sh <owner>/skills-throwaway-verify \
@@ -214,16 +277,19 @@ gh repo view <owner>/skills-throwaway-verify \
 # Expected: name matches, description matches what was passed above,
 # repositoryTopics contains "throwaway" and "verification", licenseInfo
 # is non-null (GitHub auto-detects the LICENSE file at this repo's root
-# from the pushed initial commit — setup_repo.sh itself passes no
-# --license flag; the license comes from this project's own LICENSE
-# file being part of the pushed content), and pushedAt is recent.
+# from the pushed content — setup_repo.sh itself passes no --license
+# flag), and pushedAt is recent.
 #
-# Optionally also confirm the push landed with the expected history:
-gh repo clone <owner>/skills-throwaway-verify /tmp/skills-throwaway-verify-check
-git -C /tmp/skills-throwaway-verify-check log --oneline
+# Optionally confirm the pushed history matches the local clone:
+git log --oneline -3
+gh api repos/<owner>/skills-throwaway-verify/commits --jq '.[0:3][] | .sha[0:7] + " " + (.commit.message | split("\n")[0])'
 
-# 3. Delete the disposable repo to clean up.
+# 3. Delete the disposable repo and the local clone to clean up.
+#    `gh repo delete` needs the delete_repo scope; add it once if missing:
+#      gh auth refresh -s delete_repo
+cd - >/dev/null
 gh repo delete <owner>/skills-throwaway-verify --yes
+rm -rf "$tmp"
 ```
 
 Given the stubbed-argument-parsing evidence above, the expected outcome is
