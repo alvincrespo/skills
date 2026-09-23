@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
-# Creates the alvincrespo/skills GitHub repository from this directory's
+# Creates a new GitHub repository from the current directory's
 # contents, pushes it, and sets its topics. Ends there — run the
 # github-labels-setup skill next to set up the repo's label taxonomy.
 #
-# Run from inside this project directory (the one containing this
-# github-repo-init/scripts/ folder, tracker/, docs/, README.md, etc.) —
-# not from an empty directory.
+# Run with the project to publish as the current working directory — not
+# from an empty directory, and not from wherever this script lives. Invoke
+# the script by its own path:
 #
-#   ./github-repo-init/scripts/setup_repo.sh <owner>/repo-name \
+#   /path/to/github-repo-init/scripts/setup_repo.sh <owner>/repo-name \
 #       [--description "..."] [--topics "a,b,c"]
+#
+# If the project already has a .git directory it's used as-is, but it must
+# have at least one commit and no `origin` remote — both are checked before
+# anything is created on GitHub. Uncommitted changes are not pushed.
 #
 #   --description <text>   Repo description passed to `gh repo create`.
 #                           Default: "A small, growing collection of
@@ -26,7 +30,11 @@
 set -euo pipefail
 
 usage() {
-  echo "Usage: $0 <owner>/repo-name [--description \"...\"] [--topics \"a,b,c\"]" >&2
+  echo "Usage: $0 <owner>/repo-name [--description \"...\"] [--topics \"a,b,c\"]"
+}
+
+die() {
+  echo "Error: $*" >&2
   exit 1
 }
 
@@ -46,15 +54,18 @@ while [ $# -gt 0 ]; do
       ;;
     -h|--help)
       usage
+      exit 0
       ;;
     -*)
       echo "Unknown option: $1" >&2
-      usage
+      usage >&2
+      exit 1
       ;;
     *)
       if [ -n "$REPO" ]; then
         echo "Unexpected argument: $1" >&2
-        usage
+        usage >&2
+        exit 1
       fi
       REPO="$1"
       shift
@@ -62,15 +73,39 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ -n "$REPO" ] || usage
+[ -n "$REPO" ] || { usage >&2; exit 1; }
 
-echo "==> Checking for uncommitted local git history"
-if [ -d .git ]; then
+# Split --topics on commas, trimming whitespace and dropping empty entries,
+# so a bad list fails here rather than after the repo already exists.
+IFS=',' read -ra TOPIC_LIST <<< "${TOPICS}"
+TOPIC_ARGS=()
+for topic in "${TOPIC_LIST[@]}"; do
+  topic="${topic#"${topic%%[![:space:]]*}"}"
+  topic="${topic%"${topic##*[![:space:]]}"}"
+  if [ -n "${topic}" ]; then
+    TOPIC_ARGS+=(--add-topic "${topic}")
+  fi
+done
+[ "${#TOPIC_ARGS[@]}" -gt 0 ] || die "--topics contained no non-empty topics"
+
+# Preflight: `gh repo create --source=. --remote=origin --push` creates the
+# GitHub repo before it touches local git, so a local problem found only at
+# that point leaves an empty repo behind on GitHub. Check first.
+echo "==> Checking local git state"
+if [ -e .git ]; then
   echo "    .git already exists — using it as-is, not re-initializing."
+  git rev-parse --verify -q HEAD >/dev/null \
+    || die "this repository has no commits yet; commit something before publishing"
+  if git remote get-url origin >/dev/null 2>&1; then
+    die "an 'origin' remote already exists ($(git remote get-url origin)); remove or rename it first"
+  fi
+  if [ -n "$(git status --porcelain)" ]; then
+    echo "    Warning: uncommitted changes present — they will NOT be pushed."
+  fi
 else
   git init
   git add -A
-  git commit -m "Initial commit: skills repo scaffolding + tracker"
+  git commit -m "Initial commit"
 fi
 
 echo "==> Creating ${REPO} on GitHub and pushing this content"
@@ -82,11 +117,6 @@ gh repo create "${REPO}" \
   --push
 
 echo "==> Setting repository topics"
-IFS=',' read -ra TOPIC_LIST <<< "${TOPICS}"
-TOPIC_ARGS=()
-for topic in "${TOPIC_LIST[@]}"; do
-  TOPIC_ARGS+=(--add-topic "${topic}")
-done
 gh repo edit "${REPO}" "${TOPIC_ARGS[@]}"
 
 echo ""
@@ -100,7 +130,3 @@ echo "Still manual, on purpose:"
 echo "  - Branch protection on main (no CI check to require yet)"
 echo "  - A pre-push secret scan of the initial commit (gitleaks or trufflehog)"
 echo "    before you trust this content is safe on a public remote"
-echo "  - .claude-plugin/plugin.json and marketplace.json — deliberately NOT"
-echo "    created by this script. See the 'Create plugin manifests and"
-echo "    validate' issue: the schema needs confirming against current"
-echo "    Claude Code docs, not assumed from memory."
