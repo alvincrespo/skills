@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Creates the alvincrespo/skills GitHub repository from this directory's
-# contents, then bootstraps labels, milestone, project board, and all 34
-# epic/story issues.
+# Creates a new GitHub repository from the current directory's
+# contents, pushes it, and sets its topics. Ends there — run the
+# github-labels-setup skill next to set up the repo's label taxonomy.
 #
 # Run with the project to publish as the current working directory — not
 # from an empty directory, and not from wherever this script lives. Invoke
@@ -25,7 +25,7 @@
 # Omitting either flag falls back to its documented default above rather
 # than erroring.
 #
-# Requires: gh CLI, authenticated (gh auth login), git, python3.
+# Requires: gh CLI, authenticated (gh auth login), git.
 
 set -euo pipefail
 
@@ -119,21 +119,14 @@ gh repo create "${REPO}" \
 echo "==> Setting repository topics"
 gh repo edit "${REPO}" "${TOPIC_ARGS[@]}"
 
-echo "==> Requesting the 'project' OAuth scope (needed to create/populate a Project v2 board)"
-gh auth refresh -s project
-
-echo "==> Bootstrapping labels, milestone, project board, and all epics/issues"
-python3 scripts/bootstrap_github_project.py --repo "${REPO}"
-
 echo ""
-echo "==> Done."
+echo "==> Repo ready."
 echo "    Repo:    https://github.com/${REPO}"
+echo ""
+echo "Next: run the github-labels-setup skill to set up this repo's label"
+echo "taxonomy."
 echo ""
 echo "Still manual, on purpose:"
 echo "  - Branch protection on main (no CI check to require yet)"
 echo "  - A pre-push secret scan of the initial commit (gitleaks or trufflehog)"
 echo "    before you trust this content is safe on a public remote"
-echo "  - .claude-plugin/plugin.json and marketplace.json — deliberately NOT"
-echo "    created by this script. See the 'Create plugin manifests and"
-echo "    validate' issue: the schema needs confirming against current"
-echo "    Claude Code docs, not assumed from memory."
