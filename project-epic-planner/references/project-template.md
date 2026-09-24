@@ -58,6 +58,13 @@ script reads.
 - `in_scope` has at least one entry; `out_of_scope` and `known_pieces` may
   be empty lists.
 - `repo.visibility` is exactly `public` or `private`.
+- `repo.license` is a non-empty string: an SPDX identifier (`MIT`,
+  `Apache-2.0`, …) or the literal `none`.
+- `project_name` is usable as a GitHub repo name: only letters, digits,
+  `-`, `_`, and `.` (no spaces), at most 100 characters. `gh repo create`
+  rejects or rewrites anything else, and repo creation is the one step in
+  the chain that's hard to undo — so catch it here, before the plan bakes
+  the name into tickets.
 - No item appears in both `in_scope` and `out_of_scope`.
 
 The planner checks these before generating anything. A template that fails
