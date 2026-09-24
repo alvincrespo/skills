@@ -52,10 +52,9 @@ story explains *why* it's a factory rather than a module-level global
 (parallel worktrees would share state), because that reasoning is what
 stops a later contributor from "simplifying" it back.
 
-**Second motivating example.** Self-contained *looking* isn't enough. The
-`mdlinkcheck` validation run (see
-[`docs/validation-mdlinkcheck/findings.md`](../docs/validation-mdlinkcheck/findings.md))
-produced tickets with exact signatures and file shapes and no "as
+**Second motivating example.** Self-contained *looking* isn't enough. A
+validation run of this skill, planning `mdlinkcheck` (a Markdown
+link-checker CLI and GitHub Action), produced tickets with exact signatures and file shapes and no "as
 discussed" anywhere, and five of them still couldn't be finished as
 written. A test demanded a mock transport that no signature accepted. A
 signature was literally elided as `run_external_checks(...)`. A default
