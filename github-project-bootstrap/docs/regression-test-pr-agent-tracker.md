@@ -217,7 +217,7 @@ first — not `alvincrespo/pr-agent` itself, to avoid duplicate-run
 interference with the already-populated real board — and then run:
 
 ```bash
-python scripts/bootstrap_github_project.py --repo <owner>/<disposable-repo-name> --data github-project-bootstrap/docs/pr-agent-tracker.json
+python3 github-project-bootstrap/scripts/bootstrap_github_project.py --repo <owner>/<disposable-repo-name> --data github-project-bootstrap/docs/pr-agent-tracker.json
 ```
 
 Given the structural-parity evidence above, the expected outcome is 51

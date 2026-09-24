@@ -4,10 +4,10 @@ Bootstrap a GitHub repo + Project (v2) from a --data JSON file.
 
     gh auth login
     gh auth refresh -s project      # project scope isn't in gh's default scopes
-    gh repo create <owner>/pr-agent --private --clone
-    cd pr-agent
-    python3 github-project-bootstrap/scripts/bootstrap_github_project.py --repo <owner>/pr-agent --data plan.json \
-        [--labels-file path/to/labels.json]
+    python3 <path-to>/github-project-bootstrap/scripts/bootstrap_github_project.py \
+        --repo <owner>/<repo> --data plan.json [--labels-file path/to/labels.json]
+
+Run it from any directory: it takes the target repo from --repo, not the cwd.
 
 The --data file is a JSON object with three top-level keys:
 
