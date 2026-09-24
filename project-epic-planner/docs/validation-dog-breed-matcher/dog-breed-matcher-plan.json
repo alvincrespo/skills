@@ -1,0 +1,349 @@
+{
+  "milestone": {
+    "title": "v1 — Match, Share & Adopt",
+    "description": "Done when a person can take the 11-question lifestyle quiz on a deployed instance and get a ranked list of their best-matching dog breeds, each with plain-language reasons. They can open a detail page for any breed, share a permanent link to their results, and see nearby adoptable dogs of their top breeds from a provider selected by configuration. Scoring has unit tests for every trait, and the release-validation issue passes against a real deployment and a second, local target.\n"
+  },
+  "epics": [
+    {
+      "title": "Epic: Project Setup",
+      "labels": [
+        "priority:P0",
+        "size:S"
+      ],
+      "depends_on": [],
+      "body": "## Goal\nA generated Rails app with Postgres, Tailwind, Minitest, lint/security checks, and CI that runs them on every pull request. Every other epic builds inside this app.\n\n## Dependencies\nNone. This is the root of the graph.\n\n## Unblocks\nBreed Data, Lifestyle Quiz, Adoption Provider Integration, and Deployment can all start as soon as this epic closes, and they can run in parallel with each other.\n",
+      "issues": [
+        {
+          "title": "Generate the Rails app with Postgres, Tailwind, and CI",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\nGenerate the application skeleton in the repo root:\n\n```bash\nrails new . --name=dog_breed_matcher --database=postgresql --css=tailwind --skip-jbuilder\n```\n\nUse the latest stable Rails and Ruby. Pin Ruby in `.ruby-version`. Keep the generated defaults: Minitest, Hotwire (Turbo + Stimulus), importmap, RuboCop (`rubocop-rails-omakase`), Brakeman, Kamal, and the generated `.github/workflows/ci.yml`.\n\nCheck the generated `ci.yml`. It must run `bin/rubocop`, `bin/brakeman --no-pager`, and `bin/rails db:test:prepare test` with a Postgres service container. If the generator omitted any of these, add them.\n\n## Acceptance criteria\n- [ ] `bin/setup` completes on a machine with Postgres running, and `bin/dev` serves the app at `http://localhost:3000`.\n- [ ] Integration test `test/integration/health_check_test.rb`: `GET /up` returns 200.\n- [ ] `bin/rubocop` and `bin/brakeman --no-pager` both exit 0.\n- [ ] A pull request that contains only this change has a green CI run on GitHub Actions, and each of the three steps above appears in the run log.\n"
+        },
+        {
+          "title": "Add MIT LICENSE and README",
+          "labels": [
+            "priority:P1",
+            "size:S"
+          ],
+          "body": "## What\n- `LICENSE`: the standard MIT license text, with the current year and the repo owner's name as the copyright holder.\n- `README.md` with these sections: **What it is** (one paragraph: a lifestyle quiz that ranks dog breeds and shows adoptable dogs), **Requirements** (Ruby version from `.ruby-version`, PostgreSQL), **Setup** (`bin/setup`, `bin/dev`), **Tests** (`bin/rails test`), and **Configuration** (an environment-variable table that later stories fill in; start it with the header row only).\n\n## Acceptance criteria\n- [ ] GitHub's repo sidebar detects the license as \"MIT\".\n- [ ] A reviewer who follows only the README's Setup section on a clean clone reaches a running app at `http://localhost:3000`.\n"
+        }
+      ]
+    },
+    {
+      "title": "Epic: Breed Data",
+      "labels": [
+        "priority:P0",
+        "size:M"
+      ],
+      "depends_on": [
+        "Epic: Project Setup"
+      ],
+      "body": "## Goal\nA `Breed` model with a fixed trait set, plus a curated, version-controlled seed file of at least 60 breeds that is loaded into the database automatically on every environment, including production.\n\n## Dependencies\n- **Project Setup**, because the model, migration, and loader need the Rails app and database to exist.\n\n## Parallel-safe with\n- **Lifestyle Quiz.** The quiz defines questions and stores answers and never reads breeds. Matching Engine is where the two meet.\n- **Adoption Provider Integration.** Its interface takes plain breed-name strings, not `Breed` records.\n- **Deployment.** The seed loader hooks into the generated `bin/docker-entrypoint` inside this epic, so Deployment doesn't need to wait for it.\n",
+      "issues": [
+        {
+          "title": "Create Breed model with trait columns and validations",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\nGenerate the `breeds` table and `Breed` model with exactly these columns:\n\n| Column | Type | Meaning |\n|---|---|---|\n| `name` | string, not null | Display name, e.g. \"Labrador Retriever\" |\n| `slug` | string, not null, unique index | URL key, e.g. `labrador-retriever` |\n| `description` | text, not null | 2–4 sentence summary |\n| `size` | string, not null | One of `toy`, `small`, `medium`, `large`, `giant` |\n| `hypoallergenic` | boolean, not null, default false | Low-allergen coat |\n| `energy` | integer 1–5 | 1 = couch potato, 5 = needs hours of activity |\n| `shedding` | integer 1–5 | 1 = barely sheds |\n| `grooming_needs` | integer 1–5 | 1 = wash-and-go |\n| `trainability` | integer 1–5 | 5 = eager to please, good for first-time owners |\n| `kid_friendly` | integer 1–5 | |\n| `dog_friendly` | integer 1–5 | |\n| `cat_friendly` | integer 1–5 | |\n| `alone_tolerance` | integer 1–5 | 5 = handles long workdays alone |\n| `apartment_fit` | integer 1–5 | |\n| `barking` | integer 1–5 | 1 = quiet |\n| `cold_tolerance` | integer 1–5 | |\n| `heat_tolerance` | integer 1–5 | |\n| `image_url` | string, nullable | Photo URL |\n| `image_credit` | string, nullable | Photographer/author attribution |\n| `image_license` | string, nullable | e.g. \"CC BY-SA 4.0\" |\n\nIn `app/models/breed.rb`:\n- `SIZES = %w[toy small medium large giant].freeze`\n- `TRAITS = %i[energy shedding grooming_needs trainability kid_friendly dog_friendly cat_friendly alone_tolerance apartment_fit barking cold_tolerance heat_tolerance].freeze`. The Matching Engine and Breed Detail Pages epics both read this constant.\n- Validations: presence of `name`, `slug`, `description`, and `size`. Uniqueness of `slug`. `size` must be in `SIZES`. Every trait in `TRAITS` must be present and an integer in `1..5`.\n- `def to_param = slug`\n\n## Acceptance criteria\n- [ ] Unit test `test/models/breed_test.rb`: a fixture breed with all traits set is valid.\n- [ ] Unit test: for each trait in `Breed::TRAITS`, setting the value to `0`, `6`, and `nil` makes the record invalid, with an error on that attribute. Loop over the constant so that adding a trait is covered automatically.\n- [ ] Unit test: `size: \"huge\"` is invalid, and a duplicate `slug` is invalid.\n- [ ] Unit test: `breed.to_param == breed.slug`.\n"
+        },
+        {
+          "title": "Build idempotent breed seed loader and rake task",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\n`app/services/breeds/seed_loader.rb`:\n\n```ruby\nmodule Breeds\n  class SeedLoader\n    class InvalidEntry < StandardError; end\n    def initialize(path:)   # path: String or Pathname to a YAML file\n    def call                # => Integer, number of breeds in the file\n  end\nend\n```\n\nThe YAML file is a top-level array of hashes whose keys match the `Breed` columns (see the Breed model story). `call` must:\n1. Run inside one transaction.\n2. Upsert each entry by `slug`: create the record if it's new, or update its attributes if it already exists.\n3. Delete any `Breed` whose slug isn't in the file. The file is the only source of truth.\n4. If any entry fails validation, raise `InvalidEntry` with a message containing that entry's `slug` and `errors.full_messages`, and roll back the transaction so nothing is written.\n\nWiring:\n- Rake task `breeds:load` in `lib/tasks/breeds.rake`. It takes an optional path argument (`bin/rails \"breeds:load[path/to/file.yml]\"`). The default is `Rails.root.join(\"db/seeds/breeds.yml\")`, and a relative argument is resolved against `Rails.root`.\n- `db/seeds.rb` calls `Breeds::SeedLoader.new(path: Rails.root.join(\"db/seeds/breeds.yml\")).call`.\n- In the generated `bin/docker-entrypoint`, add `./bin/rails breeds:load` right after the existing `./bin/rails db:prepare` line, so every deploy syncs breeds.\n- Commit a placeholder `db/seeds/breeds.yml` with 3 real breeds so that the task works. The dataset-curation story fills in the rest.\n\n## Acceptance criteria\n- [ ] Unit test `test/services/breeds/seed_loader_test.rb` using `test/fixtures/files/breeds/valid.yml` (2 entries): `call` returns 2, and `Breed.count == 2`. Calling it a second time still gives 2 (idempotent).\n- [ ] Unit test: change one trait in a temp copy of the file and reload. The existing record is updated in place, and its `id` is unchanged.\n- [ ] Unit test: load `valid.yml`, then load a file with only 1 of those entries. `Breed.count == 1`.\n- [ ] Unit test with `test/fixtures/files/breeds/invalid.yml` (one entry has `energy: 9`): raises `InvalidEntry`, the message includes the slug, and `Breed.count` is unchanged.\n- [ ] `bin/rails breeds:load` runs against the placeholder file and prints the loaded count.\n"
+        },
+        {
+          "title": "Curate the 60-breed seed dataset",
+          "labels": [
+            "priority:P0",
+            "size:M"
+          ],
+          "body": "## What\nFill in `db/seeds/breeds.yml` to at least 60 breeds, with every column from the Breed model story.\n\n- **Coverage.** At least 6 breeds for each `size` value, and at least 8 breeds with `hypoallergenic: true`.\n- **Ratings.** Trait ratings are editorial 1–5 judgments. Base them on published breed-standard references, such as each breed's AKC or kennel-club profile. List the references used in a YAML comment at the top of the file. Rate traits relative to all dog breeds, not within a size class.\n- **Photos.** Photos must be freely licensed. Wikimedia Commons works well. For each photo, fill in `image_url`, `image_credit`, and `image_license` together, or leave all three null.\n\n## Acceptance criteria\n- [ ] Data test `test/data/breeds_seed_test.rb` loads the real file through `Breeds::SeedLoader` and asserts: `Breed.count >= 60`, every `size` value has at least 6 breeds, at least 8 breeds are hypoallergenic, and no breed has some but not all of the three image fields set. It runs in the normal `bin/rails test` suite, and it fails today against the 3-breed placeholder.\n- [ ] Spot-check: a second person reviews 10 randomly chosen entries against the listed references, and the PR records the result.\n"
+        }
+      ]
+    },
+    {
+      "title": "Epic: Lifestyle Quiz",
+      "labels": [
+        "priority:P0",
+        "size:M"
+      ],
+      "depends_on": [
+        "Epic: Project Setup"
+      ],
+      "body": "## Goal\nA landing page and an 11-question lifestyle quiz. Submitted answers are validated and saved as a `QuizSubmission` with an unguessable token, and the user is redirected to `/results/<token>`. That token URL is the shareable link. There are no accounts.\n\n## Dependencies\n- **Project Setup**, because it needs the Rails app, routes, and database.\n\n## Parallel-safe with\n- **Breed Data.** The quiz never reads breeds.\n- **Adoption Provider Integration** and **Deployment.** Neither touches quiz code.\n\nThis epic defines the `results/:token` route. The Results & Sharing epic supplies `ResultsController`. Until then, the redirect is tested by its `Location` header only.\n\n## Question set\nAll stories in this epic use this set:\n\n| key | Prompt | Option keys |\n|---|---|---|\n| `home` | Where do you live? | `apartment`, `house_small_yard`, `house_large_yard` |\n| `activity` | How active are you day to day? | `low` (walks under 30 min), `moderate` (30–60 min), `high` (60+ min, running/hiking) |\n| `alone_hours` | On a typical day, how long would the dog be alone? | `under_4`, `4_to_8`, `over_8` |\n| `kids` | Kids in the home? | `none`, `over_6`, `under_6` |\n| `other_pets` | Other pets? | `none`, `dogs`, `cats`, `dogs_and_cats` |\n| `allergies` | Does anyone in the home have dog allergies? | `yes`, `no` |\n| `experience` | Dog-owning experience? | `first_time`, `some`, `experienced` |\n| `climate` | Your climate? | `cold`, `temperate`, `hot` |\n| `grooming` | How much grooming are you up for? | `minimal`, `moderate`, `lots` |\n| `size_pref` | Preferred size? | `small`, `medium`, `large`, `any` |\n| `noise` | How much barking can you tolerate? | `low`, `high` |\n",
+      "issues": [
+        {
+          "title": "Define quiz questions in config and load them",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\n`config/quiz/questions.yml` contains exactly these 11 questions, in this order. Each question has `key` and `prompt`, and each option has `key` and `label`. The labels are the human-readable text in parentheses, or a humanized key where no text is given.\n\n| key | Prompt | Option keys |\n|---|---|---|\n| `home` | Where do you live? | `apartment`, `house_small_yard`, `house_large_yard` |\n| `activity` | How active are you day to day? | `low` (walks under 30 min), `moderate` (30–60 min), `high` (60+ min, running/hiking) |\n| `alone_hours` | On a typical day, how long would the dog be alone? | `under_4`, `4_to_8`, `over_8` |\n| `kids` | Kids in the home? | `none`, `over_6`, `under_6` |\n| `other_pets` | Other pets? | `none`, `dogs`, `cats`, `dogs_and_cats` |\n| `allergies` | Does anyone in the home have dog allergies? | `yes`, `no` |\n| `experience` | Dog-owning experience? | `first_time`, `some`, `experienced` |\n| `climate` | Your climate? | `cold`, `temperate`, `hot` |\n| `grooming` | How much grooming are you up for? | `minimal`, `moderate`, `lots` |\n| `size_pref` | Preferred size? | `small`, `medium`, `large`, `any` |\n| `noise` | How much barking can you tolerate? | `low`, `high` |\n\n`app/models/quiz/question.rb` is a PORO:\n\n```ruby\nmodule Quiz\n  Question = Data.define(:key, :prompt, :options)   # options: Array of Data(:key, :label)\n  class Question\n    DEFAULT_PATH = Rails.root.join(\"config/quiz/questions.yml\")\n    class InvalidDefinition < StandardError; end\n    def self.load(path = DEFAULT_PATH)  # => Array<Question>; raises InvalidDefinition\n    def self.all                        # memoized load(DEFAULT_PATH)\n  end\nend\n```\n\n`load` raises `InvalidDefinition` if the file has a duplicate question key, a question with fewer than 2 options, or a duplicate option key within a question.\n\n## Acceptance criteria\n- [ ] Unit test `test/models/quiz/question_test.rb`: `Quiz::Question.all.map(&:key)` equals the 11 keys above in order, and `all` returns the same object on repeated calls.\n- [ ] Unit test: each of `test/fixtures/files/quiz/duplicate_key.yml`, `one_option.yml`, and `duplicate_option.yml` raises `InvalidDefinition` when passed to `load`.\n"
+        },
+        {
+          "title": "Implement Quiz::Answers value object with validation",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\n`app/models/quiz/answers.rb`:\n\n```ruby\nmodule Quiz\n  class Answers\n    include ActiveModel::Validations\n    def initialize(raw, questions: Quiz::Question.all)  # raw: Hash or ActionController::Parameters, string or symbol keys\n    def [](key)        # => String option key, or nil\n    def to_h           # => Hash{String => String}, only known question keys\n  end\nend\n```\n\nValidation: every question in `questions` must have an answer, and each answer must be one of that question's option keys. Errors are added on the question key, e.g. `errors[:allergies]`. Keys in `raw` that aren't question keys are dropped silently.\n\nNeeds the \"Define quiz questions in config and load them\" story, because it uses `Quiz::Question`.\n\n## Acceptance criteria\n- [ ] Unit test `test/models/quiz/answers_test.rb`: a hash answering all 11 questions with valid options is `valid?`, and `to_h` round-trips it.\n- [ ] Unit test: omitting `kids` makes it invalid, with an error on `:kids`. Setting `home: \"castle\"` gives an error on `:home`.\n- [ ] Unit test: an extra key `admin: \"true\"` is absent from `to_h`.\n- [ ] Unit test: passing `questions:` as a 1-question array validates against only that question. This proves the seam works.\n"
+        },
+        {
+          "title": "Add QuizSubmission model with share token",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\nMigration `create_quiz_submissions`: `token` (string, not null, unique index), `answers` (jsonb, not null), timestamps.\n\n`app/models/quiz_submission.rb`:\n- `before_validation :assign_token, on: :create`, which sets `self.token ||= SecureRandom.urlsafe_base64(16)` (22 chars, 128 bits). The token is the only access control on a result, so it must be unguessable. Never use the numeric id in a URL.\n- A validation that `Quiz::Answers.new(answers)` is valid. Copy its errors onto `:answers`.\n- `def to_param = token`\n- `def quiz_answers = Quiz::Answers.new(answers)`\n\nNeeds the \"Implement Quiz::Answers value object with validation\" story.\n\n## Acceptance criteria\n- [ ] Unit test `test/models/quiz_submission_test.rb`: creating with valid answers assigns a 22-character URL-safe token, and two creates produce different tokens.\n- [ ] Unit test: invalid answers (missing `allergies`) are not saved, and `errors[:answers]` is present.\n- [ ] Unit test: `to_param == token`, and `quiz_answers[:home]` returns the stored value.\n"
+        },
+        {
+          "title": "Build landing page and quiz form",
+          "labels": [
+            "priority:P0",
+            "size:M"
+          ],
+          "body": "## What\nRoutes in `config/routes.rb`:\n\n```ruby\nroot \"pages#home\"\nresource :quiz, only: [:new, :create]   # GET /quiz/new, POST /quiz\nget \"results/:token\", to: \"results#show\", as: :result\n```\n\n- `PagesController#home` shows a headline and a \"Find your match\" button linking to `new_quiz_path`.\n- `QuizzesController#new` renders every `Quiz::Question.all` entry as a radio-button group named `answers[<question key>]`.\n- `QuizzesController#create` builds `QuizSubmission.new(answers: params.fetch(:answers, {}).permit(*Quiz::Question.all.map(&:key)).to_h)`. On save, it redirects to `result_path(submission)`. Otherwise it re-renders `new` with status 422, keeps the user's answers, and shows an error message next to each unanswered or invalid question.\n- Style with Tailwind. The form must be usable at 375px width: one question per block, and radio labels are tap targets.\n\n`ResultsController` does not exist yet (Results & Sharing epic). Don't create it here.\n\n## Acceptance criteria\n- [ ] Integration test `test/integration/quiz_flow_test.rb`: `GET /` contains a link to `/quiz/new`, and `GET /quiz/new` renders 11 radio groups.\n- [ ] Integration test: posting all 11 valid answers increments `QuizSubmission.count` by 1 and responds with a redirect whose `Location` ends in `/results/<that submission's token>`.\n- [ ] Integration test: posting 10 answers (no `allergies`) returns 422, creates nothing, shows the error next to the allergies question, and keeps the other 10 selections checked.\n"
+        }
+      ]
+    },
+    {
+      "title": "Epic: Matching Engine",
+      "labels": [
+        "priority:P0",
+        "size:M"
+      ],
+      "depends_on": [
+        "Epic: Breed Data",
+        "Epic: Lifestyle Quiz"
+      ],
+      "body": "## Goal\nA deterministic, unit-tested pipeline that turns `Quiz::Answers` plus breed records into a ranked list of matches, each with plain-language reasons and at most one caveat. It uses no ML and no LLM.\n\nPipeline: `Profile.from_answers` → `Engine#call` (applies `Filters`, scores, ranks) → `Explainer#call` per match. The Results page calls these three pieces. None of them knows about HTTP.\n\n## Dependencies\n- **Breed Data**, because scoring reads `Breed::TRAITS` and trait columns, and the persona regression story runs against the curated seed file.\n- **Lifestyle Quiz**, because `Profile.from_answers` consumes `Quiz::Answers` and the question and option keys defined there.\n\n## Parallel-safe with\n- **Breed Detail Pages.** It renders `Breed` records directly and never scores.\n- **Adoption Provider Integration** and **Deployment.**\n",
+      "issues": [
+        {
+          "title": "Map quiz answers to a matching profile",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\n`app/models/matching/profile.rb`:\n\n```ruby\nmodule Matching\n  Preference = Data.define(:target, :weight)             # target 1..5, weight 1..3\n  Dealbreaker = Data.define(:key, :trait, :op, :value)   # op: :gte, :eq, or :in\n  Profile = Data.define(:preferences, :dealbreakers)     # preferences: Hash{Symbol trait => Preference}\n  class Profile\n    def self.from_answers(answers)  # answers: Quiz::Answers (valid)\n  end\nend\n```\n\nMapping, exactly:\n\n| Answer | Preferences (trait → target, weight) | Dealbreaker |\n|---|---|---|\n| `home: apartment` | `apartment_fit` → 5, w3 | — |\n| `home: house_small_yard` | `apartment_fit` → 3, w1 | — |\n| `home: house_large_yard` | — | — |\n| `activity: low` | `energy` → 1, w3 | — |\n| `activity: moderate` | `energy` → 3, w2 | — |\n| `activity: high` | `energy` → 5, w3 | — |\n| `alone_hours: under_4` | — | — |\n| `alone_hours: 4_to_8` | `alone_tolerance` → 3, w2 | — |\n| `alone_hours: over_8` | `alone_tolerance` → 5, w3 | — |\n| `kids: over_6` | `kid_friendly` → 4, w2 | — |\n| `kids: under_6` | `kid_friendly` → 5, w3 | `kid_friendly >= 3` (key `:kids`) |\n| `other_pets: dogs` | `dog_friendly` → 5, w2 | `dog_friendly >= 3` (key `:other_pets`) |\n| `other_pets: cats` | `cat_friendly` → 5, w2 | `cat_friendly >= 3` (key `:other_pets`) |\n| `other_pets: dogs_and_cats` | both rows above | both dealbreakers above |\n| `allergies: yes` | `shedding` → 1, w2 | `hypoallergenic == true` (key `:allergies`) |\n| `experience: first_time` | `trainability` → 5, w2 | — |\n| `experience: some` | `trainability` → 4, w1 | — |\n| `climate: cold` | `cold_tolerance` → 5, w1 | — |\n| `climate: hot` | `heat_tolerance` → 5, w1 | — |\n| `grooming: minimal` | `grooming_needs` → 1, w2 | — |\n| `grooming: moderate` | `grooming_needs` → 3, w1 | — |\n| `size_pref: small` | — | `size in [toy, small]` (key `:size_pref`) |\n| `size_pref: medium` | — | `size in [medium]` (key `:size_pref`) |\n| `size_pref: large` | — | `size in [large, giant]` (key `:size_pref`) |\n| `noise: low` | `barking` → 1, w2 | — |\n\nAnswers not listed (`kids: none`, `other_pets: none`, `allergies: no`, `experience: experienced`, `climate: temperate`, `grooming: lots`, `size_pref: any`, `noise: high`) add nothing.\n\nEvery trait symbol used must be in `Breed::TRAITS`, except the dealbreaker-only attributes `size` and `hypoallergenic`.\n\n## Acceptance criteria\n- [ ] Unit test `test/models/matching/profile_test.rb`: for an all-neutral answer set (every answer from the \"add nothing\" list), `preferences` and `dealbreakers` are both empty.\n- [ ] Unit test: `allergies: yes` produces `preferences[:shedding] == Preference.new(target: 1, weight: 2)` and a dealbreaker `Dealbreaker.new(key: :allergies, trait: :hypoallergenic, op: :eq, value: true)`.\n- [ ] Unit test: `other_pets: dogs_and_cats` produces two dealbreakers, both with key `:other_pets`.\n- [ ] Unit test: every preference key produced by any single answer is in `Breed::TRAITS`. Iterate over every option of every question.\n"
+        },
+        {
+          "title": "Apply dealbreaker filters to breeds",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\n`app/models/matching/filters.rb`:\n\n```ruby\nmodule Matching\n  module Filters\n    # breeds: Enumerable<Breed>; dealbreakers: Array<Dealbreaker>\n    # => [kept Array<Breed>, removed_counts Hash{Symbol key => Integer}]\n    def self.apply(breeds, dealbreakers)\n  end\nend\n```\n\nA breed is kept only if it passes every dealbreaker. For each dealbreaker, `removed_counts[key]` counts the breeds that failed that dealbreaker, including breeds that also failed others. The Results empty state uses these counts to say which answers ruled breeds out. Keys with a zero count are omitted.\n\n## Acceptance criteria\n- [ ] Unit test `test/models/matching/filters_test.rb`, built with in-memory `Breed.new(...)` records (no DB): with `hypoallergenic == true`, only hypoallergenic breeds are kept, and `removed_counts == {allergies: <n>}`.\n- [ ] Unit test: `:gte` keeps a value exactly equal to the threshold, and `:in` with `[\"toy\",\"small\"]` drops a `medium` breed.\n- [ ] Unit test: a breed failing two dealbreakers with different keys is counted under both keys.\n- [ ] Unit test: an empty dealbreaker list returns all breeds and `{}`.\n"
+        },
+        {
+          "title": "Score and rank breeds against a profile",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\n`app/models/matching/engine.rb`:\n\n```ruby\nmodule Matching\n  Match = Data.define(:breed, :score, :distances)       # score 0..100 Integer; distances Hash{trait => 0..4}\n  Result = Data.define(:matches, :removed_counts)\n  class Engine\n    def initialize(breeds:, profile:)\n    def call(limit: 5)   # => Result\n  end\nend\n```\n\n`call` does the following:\n1. Runs `Filters.apply(breeds, profile.dealbreakers)`.\n2. For each kept breed and each preferred trait, computes `distance = (target - breed.public_send(trait)).abs`.\n3. Computes `score = (100 * (1 - Σ(weight × distance) / Σ(weight × 4))).round`. With no preferences, the score is 100.\n4. Sorts by score descending, then `breed.name` ascending, and takes `limit`.\n\nNeeds \"Map quiz answers to a matching profile\" and \"Apply dealbreaker filters to breeds\".\n\n## Acceptance criteria\n- [ ] Unit test `test/models/matching/engine_test.rb` with in-memory breeds: a breed matching every target exactly scores 100, and a breed at distance 4 on every preferred trait scores 0.\n- [ ] Unit test: with preferences `energy → 5 (w3)` and `barking → 1 (w1)`, a breed with energy 5 / barking 5 scores `(100 * (1 - 4/16)).round == 75`, and it ranks above a breed with energy 1 / barking 1, which scores `(100 * (1 - 12/16)).round == 25`.\n- [ ] Unit test: two breeds with equal scores come back in alphabetical order, and `limit: 1` returns one match.\n- [ ] Unit test: when every breed is filtered out, `matches == []` and `removed_counts` is passed through from `Filters`.\n"
+        },
+        {
+          "title": "Explain each match with reasons and a caveat",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\n`app/models/matching/explainer.rb`:\n\n```ruby\nmodule Matching\n  Explanation = Data.define(:reasons, :caveat)   # reasons: Array<String> (0..3); caveat: String or nil\n  class Explainer\n    def initialize(profile:)\n    def call(match)   # match: Matching::Match => Explanation\n  end\nend\n```\n\n- **reasons:** preferred traits where `match.distances[trait] <= 1`, sorted by weight descending, then trait name ascending. Take the first 3, and turn each into text with `I18n.t(\"matching.reasons.#{trait}\")`.\n- **caveat:** the preferred trait with the largest `weight × distance`, among traits whose distance is 2 or more. Ties go to the trait name ascending. The text is `I18n.t(\"matching.caveats.#{trait}\")`. If no trait has distance 2 or more, `nil`.\n- Add `matching.reasons.*` and `matching.caveats.*` to `config/locales/en.yml` for every trait in `Breed::TRAITS`. Example: `reasons.apartment_fit: \"Adapts well to apartment living\"` and `caveats.apartment_fit: \"May feel cramped in an apartment\"`.\n\nNeeds \"Score and rank breeds against a profile\", because it uses `Match`.\n\n## Acceptance criteria\n- [ ] Unit test `test/models/matching/explainer_test.rb`: with 4 preferred traits all at distance 0, `reasons` has 3 entries, in weight-then-name order.\n- [ ] Unit test: a trait at distance 3 with weight 3 is the caveat, beating a trait at distance 4 with weight 1 (9 > 4).\n- [ ] Unit test: when every distance is ≤ 1, `caveat` is nil.\n- [ ] Unit test: for every trait in `Breed::TRAITS`, both locale keys exist. Use `I18n.exists?` so the test fails on a missing key rather than rendering \"translation missing\".\n"
+        },
+        {
+          "title": "Add persona regression tests against the curated dataset",
+          "labels": [
+            "priority:P1",
+            "size:S"
+          ],
+          "body": "## What\n`test/data/matching_personas_test.rb` loads the real `db/seeds/breeds.yml` through `Breeds::SeedLoader`. It then runs `Profile.from_answers` → `Engine#call(limit: 5)` for each persona below and asserts properties of the results, not specific breeds. Asserting properties lets ratings be retuned without constant test churn, while still catching mistakes that make the output absurd.\n\n| Persona | Answers that differ from neutral | Assertion on the top 5 |\n|---|---|---|\n| Allergic apartment dweller | `home: apartment`, `allergies: yes`, `noise: low` | all `hypoallergenic`; all `apartment_fit >= 3` |\n| Trail runner | `activity: high`, `home: house_large_yard` | all `energy >= 4` |\n| Family with toddler and cat | `kids: under_6`, `other_pets: cats` | all `kid_friendly >= 3` and `cat_friendly >= 3`; at least 5 results |\n| Long workdays | `alone_hours: over_8`, `experience: first_time` | all `alone_tolerance >= 3` |\n| Small-dog, hot climate | `size_pref: small`, `climate: hot` | all size in `toy`/`small` |\n\nNeutral answers are the \"add nothing\" options from the mapping table in \"Map quiz answers to a matching profile\".\n\nNeeds every other story in this epic, plus \"Curate the 60-breed seed dataset\".\n\n## Acceptance criteria\n- [ ] Data test: all 5 personas pass against the curated file.\n- [ ] Deliberately breaking the data proves the tests can fail: temporarily set every breed's `energy` to 1 in a temp copy of the YAML, load that copy, and confirm the Trail-runner assertion fails. Record the check in the PR description.\n"
+        }
+      ]
+    },
+    {
+      "title": "Epic: Breed Detail Pages",
+      "labels": [
+        "priority:P0",
+        "size:S"
+      ],
+      "depends_on": [
+        "Epic: Breed Data"
+      ],
+      "body": "## Goal\nPublic pages for every breed: an index at `/breeds` and a detail page at `/breeds/<slug>` showing the description, size, each trait as a 1–5 meter, a hypoallergenic badge, and a credited photo.\n\n## Dependencies\n- **Breed Data**, because it renders `Breed` records and `Breed::TRAITS`.\n\n## Parallel-safe with\n- **Matching Engine** and **Lifestyle Quiz.** Detail pages never score or read answers. Results & Sharing links result cards here, so it depends on this epic. This epic depends only on Breed Data, which Matching Engine also needs, so it will usually finish before Matching does, and that dependency adds no real delay.\n",
+      "issues": [
+        {
+          "title": "Build breed detail page",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\n- Route: `resources :breeds, only: [:index, :show], param: :slug`. The index action is added in the \"Build breed index with size filter\" story. Declare both here so the route stays stable.\n- `BreedsController#show` loads `Breed.find_by!(slug: params[:slug])`. Unknown slugs return 404.\n- The view shows `name` as the page title and `<h1>`, then the size, `description`, and a hypoallergenic badge when true.\n- Render each trait in `Breed::TRAITS` with a shared partial `app/views/breeds/_trait_meter.html.erb` (locals: `label:`, `value:`) that draws 5 segments with `value` filled and `aria-label=\"<label>: <value> out of 5\"`. The label is `I18n.t(\"breeds.traits.#{trait}\")`. Add those keys to `config/locales/en.yml`.\n- When `image_url` is present, show the photo with `alt=\"<name>\"` and a caption \"Photo: <image_credit>, <image_license>\".\n\n## Acceptance criteria\n- [ ] Integration test `test/integration/breeds_show_test.rb`: `GET /breeds/<fixture slug>` returns 200 and contains the name, the description, and one element per `Breed::TRAITS` entry with an `aria-label` matching `/: [1-5] out of 5/`.\n- [ ] Integration test: the fixture with an image renders the credit caption, and the fixture without an image renders no `<img>`.\n- [ ] Integration test: `GET /breeds/not-a-breed` returns 404.\n"
+        },
+        {
+          "title": "Build breed index with size filter",
+          "labels": [
+            "priority:P1",
+            "size:S"
+          ],
+          "body": "## What\n- `BreedsController#index` lists all breeds sorted by `name`, each linking to `breed_path(breed)`.\n- Optional `?size=<value>` filter: when the value is in `Breed::SIZES`, show only that size. Any other value is ignored, and all breeds are shown.\n- Show size filter links (All, Toy, Small, Medium, Large, Giant) at the top, and highlight the active one.\n- Add a \"Browse all breeds\" link to the landing page (`pages#home`).\n\n## Acceptance criteria\n- [ ] Integration test `test/integration/breeds_index_test.rb` with 3 fixture breeds of different sizes: `GET /breeds` lists all 3 in alphabetical order.\n- [ ] Integration test: `GET /breeds?size=small` lists only the small fixture, and `GET /breeds?size=bogus` lists all 3.\n- [ ] Integration test: `GET /` contains a link to `/breeds`.\n"
+        }
+      ]
+    },
+    {
+      "title": "Epic: Results & Sharing",
+      "labels": [
+        "priority:P0",
+        "size:M"
+      ],
+      "depends_on": [
+        "Epic: Matching Engine",
+        "Epic: Breed Detail Pages"
+      ],
+      "body": "## Goal\n`/results/<token>` shows the user's top 5 breed matches, each with a score, reasons, a caveat, a photo, and a link to the breed page. The same URL is the shareable link: it has a copy button and link-preview meta tags.\n\nResults are recomputed from the stored answers on every view, not frozen. If the seed data is corrected, old links show the corrected ranking. This is deliberate: storing answers only keeps `quiz_submissions` small and the data file the single source of truth.\n\n## Dependencies\n- **Matching Engine**, because the page renders `Engine` and `Explainer` output.\n- **Breed Detail Pages**, because result cards link to `breed_path`. Only the \"Render results page for a quiz submission\" story needs this. See the Breed Detail Pages epic body for why it costs no real delay.\n\nThe `results/:token` route and `QuizSubmission` come from Lifestyle Quiz, which Matching Engine already depends on.\n",
+      "issues": [
+        {
+          "title": "Render results page for a quiz submission",
+          "labels": [
+            "priority:P0",
+            "size:M"
+          ],
+          "body": "## What\n`ResultsController#show` (the route `results/:token` → `results#show` already exists):\n\n```ruby\nsubmission = QuizSubmission.find_by!(token: params[:token])   # unknown token => 404\nprofile    = Matching::Profile.from_answers(submission.quiz_answers)\nresult     = Matching::Engine.new(breeds: Breed.all, profile:).call(limit: 5)\nexplainer  = Matching::Explainer.new(profile:)\n```\n\nView `app/views/results/show.html.erb`:\n- One card per match: rank number, photo (if present), breed name linked to `breed_path(match.breed)`, \"<score>% match\", the reasons as a bulleted list, and the caveat in a muted \"Heads up:\" line when present.\n- **Empty state** (`result.matches.empty?`): \"No breeds fit every must-have.\" Then one line per `result.removed_counts` entry, using `I18n.t(\"results.removed.#{key}\", count:)`, e.g. \"Your allergy answer ruled out 52 breeds\". Add a \"Retake the quiz\" link to `new_quiz_path`. Add locale keys for `allergies`, `kids`, `other_pets`, and `size_pref`.\n- Put a \"Retake the quiz\" link below the matches too.\n\n## Acceptance criteria\n- [ ] Integration test `test/integration/results_test.rb`: with 3 fixture breeds and a fixture submission whose answers favor high energy, `GET /results/<token>` lists them in the order `Matching::Engine` returns, and each card shows its score and links to `/breeds/<slug>`.\n- [ ] Integration test: `GET /results/nonexistent` returns 404.\n- [ ] Integration test: a submission with `allergies: yes`, where no fixture breed is hypoallergenic, shows the empty-state text and the allergy removal line with the correct count.\n"
+        },
+        {
+          "title": "Add share link and link-preview metadata to results",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\nOn the results page:\n- A read-only text input containing `result_url(submission)`. The host comes from the request or `default_url_options`, never a hardcoded domain.\n- A \"Copy link\" button driven by a Stimulus controller `app/javascript/controllers/clipboard_controller.js`, with targets `source` and `button`. On click it calls `navigator.clipboard.writeText(this.sourceTarget.value)` and changes the button text to \"Copied!\" for 2 seconds. If the Clipboard API is unavailable or rejects, it selects the input text so the user can copy manually.\n- In `<head>` (via `content_for :head`, and add `yield :head` to the layout if it's missing): `og:title` = \"My top dog breed matches\", `og:description` = the top 3 breed names joined with \", \", `og:url` = `result_url(submission)`, and `og:image` = the top match's `image_url` when present.\n- `<meta name=\"robots\" content=\"noindex\">`, so shared personal results don't get indexed by search engines.\n\n## Acceptance criteria\n- [ ] Integration test in `test/integration/results_test.rb`: the page has an input whose value is `http://www.example.com/results/<token>` (the integration-test host), which proves the URL is built from the request.\n- [ ] Integration test: `og:description` equals the top 3 fixture names in rank order, and the robots `noindex` tag is present.\n- [ ] System test `test/system/share_results_test.rb` (headless Chrome, the Rails default driver): clicking \"Copy link\" changes the button text to \"Copied!\", or, where clipboard permission is denied in CI, the input's text is selected. Either way the test asserts one of the two outcomes, so neither a missing controller nor a JavaScript error passes.\n"
+        }
+      ]
+    },
+    {
+      "title": "Epic: Adoption Provider Integration",
+      "labels": [
+        "priority:P0",
+        "size:M"
+      ],
+      "depends_on": [
+        "Epic: Project Setup"
+      ],
+      "body": "## Goal\nA provider-agnostic way to search for adoptable dogs by breed and location. The provider is chosen by configuration (`ADOPTION_PROVIDER`), with a fake provider for development and tests, one real provider picked by a short evaluation, and a caching layer in front.\n\n## Dependencies\n- **Project Setup** only. The provider interface takes plain breed-name strings and a postal code, so it doesn't need `Breed` or the quiz.\n\n## Parallel-safe with\nBreed Data, Lifestyle Quiz, Matching Engine, and everything else. Slug-to-provider breed-name mapping and the results-page UI need both this epic and Results & Sharing, so they live in a later epic, Adoption Listings on Results. That keeps this whole epic unblocked from day one.\n",
+      "issues": [
+        {
+          "title": "Evaluate adoption listing providers and record the choice",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\nA time-boxed evaluation (about 1 session) that produces `docs/adr/0001-adoption-provider.md`. Candidates include RescueGroups.org's public API and Petfinder's API. **First confirm that each one is currently available to new developers.** Their availability and terms may have changed, so don't assume. Add any other US-wide adoptable-pet API that turns up.\n\nFor each candidate, record:\n- Signup and key process, cost, and rate limits\n- Terms: whether listing data may be displayed in a public app, and any required attribution\n- Search by breed name(s) + postal code + radius: supported, and how\n- The breed taxonomy it uses: its own list, or free text\n- Fields per listing: name, breed, age, photo, shelter, city, and a link back to the listing\n- Base URL and auth scheme\n\nThe ADR ends with the chosen provider, the reason, its base URL, the environment variable names for its credentials (`ADOPTION_API_KEY`, plus any others it needs), and one real sample search response. Save that response with credentials stripped as `test/fixtures/files/adoption/<provider>_search.json`, for the client story's tests.\n\n## Acceptance criteria\n- [ ] The ADR exists, covers at least 2 candidates with every point above, and names exactly one choice.\n- [ ] The sample response file exists, is valid JSON (`ruby -rjson -e 'JSON.parse(File.read(ARGV[0]))' <file>` exits 0), and contains no API key or token. A reviewer can check this with `grep -i` for the key value.\n"
+        },
+        {
+          "title": "Define adoption provider interface with fake provider",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\n`app/services/adoption.rb` and `app/services/adoption/`:\n\n```ruby\nmodule Adoption\n  Listing = Data.define(:name, :breed, :age, :photo_url, :shelter_name, :city, :url)\n  class ProviderError < StandardError; end\n\n  # Interface every provider implements:\n  #   search(breed_names:, postal_code:, radius_miles:, limit:) => Array<Listing>\n  #   raises ProviderError on any upstream failure. It never returns [] to mean \"failed\".\n\n  class FakeProvider\n    DEFAULT_PATH = Rails.root.join(\"test/fixtures/files/adoption/fake_listings.json\")\n    def initialize(path: DEFAULT_PATH)\n    def search(breed_names:, postal_code:, radius_miles:, limit:)\n  end\n\n  PROVIDERS = { \"fake\" => -> { FakeProvider.new } }   # the real-client story adds its entry here\n  def self.provider(name = ENV[\"ADOPTION_PROVIDER\"])\nend\n```\n\n- `FakeProvider#search` returns listings from the JSON file whose `breed` is in `breed_names` (case-insensitive), up to `limit`. It ignores location. If `postal_code == \"00000\"`, it raises `ProviderError`, which gives tests and demos a way to simulate an outage.\n- `fake_listings.json` holds at least 6 listings across at least 3 common breeds (e.g. Labrador Retriever, Beagle, Poodle).\n- `Adoption.provider`: a nil name resolves to `\"fake\"` outside production. In production a nil name raises `KeyError` with the message \"Set ADOPTION_PROVIDER (one of: …)\". An unknown name raises `ArgumentError` listing the valid names.\n- Add `ADOPTION_PROVIDER` to the README configuration table.\n\n## Acceptance criteria\n- [ ] Unit test `test/services/adoption/fake_provider_test.rb`: searching `breed_names: [\"beagle\"]` returns only Beagle listings as `Listing` instances, `limit: 1` returns 1, and `postal_code: \"00000\"` raises `ProviderError`.\n- [ ] Unit test `test/services/adoption_test.rb`: `Adoption.provider(\"fake\")` is a `FakeProvider`, `Adoption.provider(\"nope\")` raises `ArgumentError`, and with `Rails.env` stubbed to production, `Adoption.provider(nil)` raises `KeyError`.\n"
+        },
+        {
+          "title": "Add caching decorator for adoption searches",
+          "labels": [
+            "priority:P1",
+            "size:S"
+          ],
+          "body": "## What\n`app/services/adoption/cached_provider.rb`:\n\n```ruby\nmodule Adoption\n  class CachedProvider\n    def initialize(inner:, cache: Rails.cache, ttl: 15.minutes)\n    def search(breed_names:, postal_code:, radius_miles:, limit:)\n  end\nend\n```\n\n- Cache key: `[\"adoption\", inner.class.name, breed_names.map(&:downcase).sort, postal_code, radius_miles, limit]`.\n- Successful results, including `[]`, are cached for `ttl`. A `ProviderError` propagates and is **not** cached, so a transient outage doesn't stick for 15 minutes.\n- `Adoption.provider` wraps its result in `CachedProvider` when `ENV[\"ADOPTION_CACHE\"] != \"off\"`. Add `ADOPTION_CACHE` to the README configuration table.\n\nThe test environment's `Rails.cache` is `:null_store`, so tests must pass `cache: ActiveSupport::Cache::MemoryStore.new` explicitly.\n\n## Acceptance criteria\n- [ ] Unit test `test/services/adoption/cached_provider_test.rb` using a counting stub provider: two identical searches call `inner` once, and the breed-name order (`[\"Beagle\",\"Poodle\"]` vs `[\"poodle\",\"beagle\"]`) doesn't matter.\n- [ ] Unit test: a different `postal_code` calls `inner` again.\n- [ ] Unit test: when `inner` raises `ProviderError`, the error propagates, and a second identical call hits `inner` again.\n- [ ] Unit test: using `travel` past `ttl`, `inner` is called again.\n"
+        },
+        {
+          "title": "Implement HTTP client for the chosen adoption provider",
+          "labels": [
+            "priority:P0",
+            "size:M"
+          ],
+          "body": "## What\n`app/services/adoption/<provider>_provider.rb`, implementing the interface from \"Define adoption provider interface with fake provider\" for the provider chosen in `docs/adr/0001-adoption-provider.md`. Register it in `Adoption::PROVIDERS` under a lowercase key named in the ADR.\n\n- The constructor is `initialize(api_key: ENV.fetch(\"ADOPTION_API_KEY\"), base_url: ENV.fetch(\"ADOPTION_API_BASE_URL\", <ADR's documented base URL>), http: Net::HTTP)`. `http` is the seam tests use, and a real run passes nothing. If the ADR names extra credentials, add them as keyword arguments read from the env vars it names.\n- Build the request from `breed_names`, `postal_code`, `radius_miles`, and `limit` as described in the ADR.\n- Set open and read timeouts to 5 seconds.\n- Map each result to `Adoption::Listing`. A missing photo becomes `photo_url: nil`. A listing without a public URL is skipped.\n- Raise `Adoption::ProviderError`, with the cause chained, on non-2xx responses, timeouts, connection errors, or unparseable JSON.\n- Add `ADOPTION_API_KEY` and `ADOPTION_API_BASE_URL` to the README configuration table. Add the `webmock` gem to the `:test` group and require `webmock/minitest` in `test/test_helper.rb`. Disable real network connections in tests.\n\nNeeds \"Evaluate adoption listing providers and record the choice\" and \"Define adoption provider interface with fake provider\".\n\n## Acceptance criteria\n- [ ] Unit test `test/services/adoption/<provider>_provider_test.rb`: stub the documented endpoint with WebMock to return `test/fixtures/files/adoption/<provider>_search.json`. `search` returns `Listing`s with name, breed, and url populated, and the stubbed request carries the expected breed, location, and auth parameters, asserted with `assert_requested`.\n- [ ] Unit test: a stubbed 500 response, a stubbed timeout (`to_timeout`), and a stubbed `\"not json\"` body each raise `Adoption::ProviderError`.\n- [ ] Manual check, recorded in the PR: `ADOPTION_PROVIDER=<key> ADOPTION_API_KEY=<real key> bin/rails runner 'pp Adoption.provider.search(breed_names: [\"Labrador Retriever\"], postal_code: \"<any real ZIP>\", radius_miles: 50, limit: 3)'` prints real listings. Repeat it with a second ZIP in a different state.\n"
+        }
+      ]
+    },
+    {
+      "title": "Epic: Adoption Listings on Results",
+      "labels": [
+        "priority:P0",
+        "size:S"
+      ],
+      "depends_on": [
+        "Epic: Results & Sharing",
+        "Epic: Adoption Provider Integration"
+      ],
+      "body": "## Goal\nOn the results page, the user enters a ZIP code and sees adoptable dogs of their top 3 matched breeds nearby, loaded in a Turbo Frame so the matches render immediately. Links go out to the provider's listing. Applications happen off-site.\n\n## Dependencies\n- **Results & Sharing**, because the panel is embedded in the results page and scoped to a submission's token.\n- **Adoption Provider Integration**, because the panel calls `Adoption.provider` and translates breeds into the provider's breed names, which requires the taxonomy recorded in its ADR.\n\nBreed Data is reached transitively through Results & Sharing. The breed-map lint test needs the curated seed file.\n\nBoth stories in this epic genuinely need both blockers. They were split out of the two parent epics so neither parent waits on the other.\n",
+      "issues": [
+        {
+          "title": "Map breed slugs to provider breed names",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\n- `config/adoption/breed_map.yml` has one top-level key per provider key (e.g. `fake:` and the real provider's key). Under each, it maps a breed slug to an array of that provider's breed names. Use `[]` when the provider has no equivalent. Fill in every slug in `db/seeds/breeds.yml`, using the taxonomy documented in `docs/adr/0001-adoption-provider.md`.\n- `app/services/adoption/breed_map.rb`:\n\n```ruby\nmodule Adoption\n  class BreedMap\n    DEFAULT_PATH = Rails.root.join(\"config/adoption/breed_map.yml\")\n    def initialize(provider_key:, path: DEFAULT_PATH)\n    def names_for(slugs)   # => Array<String>, flattened, de-duplicated; unmapped slug => falls back to Breed name\n  end\nend\n```\n\n## Acceptance criteria\n- [ ] Unit test `test/services/adoption/breed_map_test.rb` with a fixture map: `names_for([\"poodle-standard\",\"poodle-toy\"])` de-duplicates to `[\"Poodle\"]`, and a slug that's absent from the map falls back to `Breed.find_by(slug:).name`.\n- [ ] Data test `test/data/breed_map_test.rb`: for every provider key in `Adoption::PROVIDERS`, every slug in `db/seeds/breeds.yml` is present in the map (an explicit `[]` counts). Adding a breed to the seed file without mapping it fails this test.\n"
+        },
+        {
+          "title": "Show nearby adoptable dogs panel on results page",
+          "labels": [
+            "priority:P0",
+            "size:M"
+          ],
+          "body": "## What\n- Route: `get \"results/:token/adoptions\", to: \"adoptions#index\", as: :result_adoptions`.\n- On `results/show`: a form (GET, `data-turbo-frame=\"adoptions\"`) with a `postal_code` field and a `<turbo-frame id=\"adoptions\">`. Placeholder text: \"Enter your ZIP to see adoptable dogs nearby\".\n- `AdoptionsController#index` finds the submission by token (404 if unknown) and recomputes the top 3 matches with the same `Matching` pipeline the results page uses. Extract that into `ResultsController`'s helper or a small `Matching.top_for(submission, limit:)` if it isn't shared yet. It then calls `Adoption.provider.search(breed_names: BreedMap.new(provider_key: ENV.fetch(\"ADOPTION_PROVIDER\", \"fake\")).names_for(slugs), postal_code:, radius_miles: ENV.fetch(\"ADOPTION_RADIUS_MILES\", \"50\").to_i, limit: 12)` and renders inside `<turbo-frame id=\"adoptions\">`:\n  - **Listings:** a card per `Listing` with photo, name, breed, age, shelter, and city, plus a \"View on <provider>\" link (`target=\"_blank\" rel=\"noopener\"`). Include any attribution text the ADR says is required.\n  - **Invalid ZIP** (not `/\\A\\d{5}\\z/`, US-only in v1): \"Enter a 5-digit US ZIP code\". The provider is not called.\n  - **No results:** \"No adoptable <breeds> within <radius> miles right now.\"\n  - **`Adoption::ProviderError`:** \"Adoption listings are unavailable right now. Try again shortly.\" Log the error, and respond with 200 so the frame still renders.\n- Add `ADOPTION_RADIUS_MILES` to the README configuration table.\n\nNeeds \"Map breed slugs to provider breed names\".\n\n## Acceptance criteria\n- [ ] Integration test `test/integration/adoptions_test.rb` (with `ADOPTION_PROVIDER=fake`, set via `ClimateControl` or by stubbing `ENV`): given a submission whose top matches include a breed present in `fake_listings.json`, `GET /results/<token>/adoptions?postal_code=12345` renders those listing names inside `turbo-frame#adoptions`.\n- [ ] Integration test: `postal_code=abc` renders the ZIP error, and the provider is never called (asserted with a stub that fails if `search` is invoked).\n- [ ] Integration test: `postal_code=00000` (the fake provider's outage trigger) renders the \"unavailable\" message with status 200.\n- [ ] Integration test: unknown token → 404.\n"
+        }
+      ]
+    },
+    {
+      "title": "Epic: Deployment",
+      "labels": [
+        "priority:P0",
+        "size:M"
+      ],
+      "depends_on": [
+        "Epic: Project Setup"
+      ],
+      "body": "## Goal\nThe app deploys with Kamal to a host chosen entirely by configuration. No hostname, registry, domain, or credential is committed. Deploy the skeleton early so every later merge can ship.\n\n## Dependencies\n- **Project Setup**, because it needs the generated Kamal config and Dockerfile.\n\n## Parallel-safe with\nEverything else. Breed loading on deploy is wired into `bin/docker-entrypoint` by the Breed Data epic, and adoption config is plain environment variables, so this epic doesn't wait for either. Start it alongside Breed Data and Lifestyle Quiz rather than at the end.\n",
+      "issues": [
+        {
+          "title": "Parameterize Kamal deploy config via environment",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\nEdit the generated `config/deploy.yml` so every target-specific value comes from the environment, using the ERB that Kamal evaluates in this file:\n- `servers.web`: `<%= ENV.fetch(\"KAMAL_WEB_HOST\") %>`\n- `proxy.host`: `<%= ENV.fetch(\"APP_DOMAIN\") %>`, with `proxy.ssl: true`\n- `registry.server` and `registry.username`: `KAMAL_REGISTRY_SERVER` and `KAMAL_REGISTRY_USERNAME`. The password goes through `.kamal/secrets` as `KAMAL_REGISTRY_PASSWORD=$KAMAL_REGISTRY_PASSWORD`.\n- `image`: `<%= ENV.fetch(\"KAMAL_IMAGE\") %>`\n\nAdd a `.env.deploy.example` listing every variable with a placeholder value (`<your-server-ip>`, `<registry-user>/dog-breed-matcher`, and so on), and document it in the README under a **Deploying** section.\n\n## Acceptance criteria\n- [ ] With every variable exported, `bin/kamal config` exits 0 and prints the supplied host and domain.\n- [ ] With `KAMAL_WEB_HOST` unset, `bin/kamal config` exits non-zero with a `KeyError` naming `KAMAL_WEB_HOST`, which proves no fallback host is hardcoded.\n- [ ] `git grep -nE '([0-9]{1,3}\\.){3}[0-9]{1,3}' config/deploy.yml .kamal/` returns nothing.\n"
+        },
+        {
+          "title": "Configure production database and app secrets",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\n- Production database connections, for the primary database and the Solid Cache, Queue, and Cable databases that Rails generates, come only from secrets passed via `.kamal/secrets` and `env.secret` in `config/deploy.yml`. Postgres may run as a Kamal accessory or be a managed instance. Either works as long as only secrets change. Document both options in the README.\n- Pass `RAILS_MASTER_KEY`, `ADOPTION_PROVIDER`, `ADOPTION_API_KEY`, `ADOPTION_API_BASE_URL`, and `ADOPTION_RADIUS_MILES` through `env.secret` / `env.clear`, as fitting for each.\n- The README configuration table lists every variable, what it's for, and whether it's required in production.\n\n## Acceptance criteria\n- [ ] Local production-mode check: `docker build -t dbm-local .`, then `docker run` against a local Postgres with only env vars set. The container boots, the entrypoint's `db:prepare` and `breeds:load` succeed (visible in the logs), and `curl localhost:<port>/up` returns 200.\n- [ ] `git grep -nE 'password|api_key' config/database.yml config/deploy.yml` shows only ENV/secret references, no literal values.\n"
+        },
+        {
+          "title": "Deploy the app and verify health check",
+          "labels": [
+            "priority:P0",
+            "size:S"
+          ],
+          "body": "## What\nRun the first real deploy to a host of your choice. Any Linux host with Docker and SSH access works. Supply it through the environment variables from \"Parameterize Kamal deploy config via environment\".\n\n```bash\nset -a; source .env.deploy; set +a\nbin/kamal setup\n```\n\nRecord in the README's **Deploying** section: the one-time steps (DNS A record for `APP_DOMAIN`, registry login) and the redeploy command (`bin/kamal deploy`).\n\nNeeds \"Parameterize Kamal deploy config via environment\" and \"Configure production database and app secrets\".\n\n## Acceptance criteria\n- [ ] `curl -fsS https://<APP_DOMAIN>/up` returns 200 over valid TLS.\n- [ ] `bin/kamal app logs` shows `breeds:load` completing on boot.\n- [ ] A trivial follow-up change (e.g. landing-page copy) ships with `bin/kamal deploy` alone and is visible at `https://<APP_DOMAIN>/`.\n"
+        }
+      ]
+    }
+  ],
+  "release_validation_issue": {
+    "title": "Release validation: end-to-end match, share, and adopt on a deployed instance",
+    "labels": [
+      "priority:P0"
+    ],
+    "body": "## What\nProve the milestone objective against a real deployment. The target is a runtime parameter: `<BASE_URL>` is whatever instance the Deployment epic produced. Nothing in this check assumes a particular host.\n\n## Checks\nRun each of these and record the outcome, with screenshots, in a comment on this issue.\n\n1. **Three personas.** Complete the quiz at `<BASE_URL>/quiz/new` as:\n   - (a) allergic apartment dweller (`home: apartment`, `allergies: yes`, `noise: low`)\n   - (b) trail runner (`activity: high`, `home: house_large_yard`)\n   - (c) family with toddler and cat (`kids: under_6`, `other_pets: cats`)\n\n   Each lands on `/results/<token>` with up to 5 matches. Every match respects that persona's dealbreakers (check on the breed pages), and every card shows reasons.\n2. **Empty state.** Answer `allergies: yes` + `size_pref: large` + `other_pets: dogs_and_cats`. The empty state appears if nothing survives. If breeds do survive, all of them are hypoallergenic, large or giant, and dog- and cat-friendly.\n3. **Sharing.** Copy result (a)'s link and open it in a private window on a different device. It shows the same ranking. Paste the link into a chat app, and the preview shows the top 3 breed names.\n4. **Breed pages.** From a result card, open the breed page. All 12 trait meters render, and any photo has a credit. `<BASE_URL>/breeds?size=small` shows only small breeds.\n5. **Adoption, two regions.** On result (b), enter a ZIP in one US region, then a ZIP in a different state. At least one of the two returns real listings, which proves the check can fail. The other shows listings or the \"none nearby\" message. Every \"View on …\" link opens a live listing.\n6. **Provider switch by config only.** Set `ADOPTION_PROVIDER=fake` in the deploy environment and run `bin/kamal deploy` (no code change). The adoption panel shows the fake listings. Restore the real provider afterward.\n7. **Second target.** Build and run the image locally per \"Configure production database and app secrets\" (`docker run` with env vars only). Persona (a) produces the same top 5 as on `<BASE_URL>`. This proves nothing depends on the deployed host.\n\n## Done when\nAll 7 checks pass, and CI is green on `main`.\n"
+  }
+}

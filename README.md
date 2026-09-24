@@ -7,6 +7,10 @@ initialize the repo, set up labels, and bootstrap the board itself.
 
 ## Skills
 
+- [project-epic-planner](./project-epic-planner/SKILL.md) — turn a rough
+  project idea into a reviewable epic/story plan with a real dependency
+  graph, as JSON that `github-project-bootstrap` consumes plus a rendered
+  markdown doc. Produces a document only.
 - [github-labels-setup](./github-labels-setup/SKILL.md) — create or update
   a repo's label taxonomy from a JSON config, idempotently.
 - [github-project-bootstrap](./github-project-bootstrap/SKILL.md) — turn a

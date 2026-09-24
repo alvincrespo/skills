@@ -1,0 +1,36 @@
+project_name: dog-breed-matcher
+one_line_description: >-
+  A Rails web app that matches you with dog breeds based on your lifestyle
+  and links you to adoptable dogs of those breeds.
+objective: >-
+  A person answers a short lifestyle quiz and gets a ranked list of the
+  best-matching dog breeds, each with a plain-language reason it fits
+  (e.g. "low shedding: you said allergies"). They can open a detail page
+  for any breed, share a permanent link to their results, and see nearby
+  adoptable dogs of their top breeds. Done means the flow works end to end
+  on a deployed instance, the scoring has unit-test coverage for each
+  trait, and adoption listings come from a provider set in configuration.
+in_scope:
+  - "Lifestyle quiz: about 10 questions covering home size, yard, activity level, time alone, kids, other pets, allergies, experience, climate, grooming tolerance"
+  - "Curated breed dataset: a seed file of ~60 breeds rated 1–5 on a fixed trait set, loaded into the DB"
+  - "Weighted scoring engine: rank breeds against answers, with dealbreaker filters (e.g. allergies → low-shedding only) and a per-trait explanation"
+  - "Results page with top matches and why each fits"
+  - "Shareable results: permanent URL for a saved result, no login"
+  - "Breed detail pages: traits, description, photo"
+  - "Adoption listings: nearby adoptable dogs for top breeds via a pluggable provider adapter, chosen in config"
+  - "Deployment of a public instance"
+out_of_scope:
+  - "User accounts, login, or saved history"
+  - "LLM-generated matching or explanations"
+  - "Mixed-breed/designer-breed matching (listings may still show mixes)"
+  - "Native mobile apps"
+  - "Adoption applications or messaging shelters in-app (link out only)"
+  - "Admin UI for editing breeds (edit the seed file)"
+known_pieces:
+  - "Rails (latest stable) + Hotwire, PostgreSQL"
+  - "Matching is deterministic weighted scoring; no ML"
+  - "Breed data is a curated, version-controlled seed file, not an external API"
+repo:
+  visibility: public
+  license: MIT
+target_milestone_name: "v1 — Match, Share & Adopt"

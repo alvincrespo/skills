@@ -72,7 +72,7 @@ tests/
 
 `cli.main()` is a stub for now: it parses `--help` and returns exit code 0.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] `pyproject.toml` matches the fields above exactly
 - [ ] `pip install -e ".[dev]"` succeeds in a clean Python 3.11 virtualenv
 - [ ] `python -m mdlinkcheck --help` and `mdlinkcheck --help` both exit 0
@@ -92,7 +92,7 @@ pytest -q
 
 Ruff config lives in `pyproject.toml` under `[tool.ruff]` with `line-length = 100` and `select = ["E", "F", "I", "B"]`.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] Workflow file created with the trigger, matrix, and steps above
 - [ ] CI passes on `main` on all three Python versions
 - [ ] Verified once: a PR adding a deliberately failing test turns CI red (then close the PR without merging)
@@ -121,7 +121,7 @@ It must contain at least one of each:
 
 `reason` is one of `"file not found"` or `"anchor not found"`. External URLs don't appear in the fixture; external checking is tested with mocked HTTP instead.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] Fixture contains every case listed above
 - [ ] `expected.json` lists every broken link in the fixture, and nothing else
 - [ ] Unit test: every `file` in `expected.json` exists and its `line` is within that file's length
@@ -154,7 +154,7 @@ class Link:
 
 Plus two helper properties: `is_external` (target starts with `http://` or `https://`) and `is_ignored_scheme` (target starts with `mailto:`, `tel:`, or `ftp:`, which are never checked).
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] `Link` defined with exactly the fields above, frozen
 - [ ] Unit test: `is_external` and `is_ignored_scheme` against a table of targets including `https://x`, `http://x`, `./a.md`, `#top`, `mailto:a@b.c`, and `HTTPS://X` (scheme match is case-insensitive)
 
@@ -166,7 +166,7 @@ Plus two helper properties: `is_external` (target starts with `http://` or `http
 
 Links inside fenced code blocks, indented code blocks, and inline code spans are not links and must not be emitted. markdown-it-py already doesn't produce `link_open` tokens there; the test pins that behavior.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] `extract_links()` returns inline links and images with the correct `kind`
 - [ ] Unit test: a paragraph spanning three lines with a link on its third line reports that line, not the paragraph's first
 - [ ] Unit test: links inside a fenced block, an indented block, and an inline code span are not returned
@@ -181,7 +181,7 @@ Extend `extract_links()`:
 
 An undefined reference (`[text][nope]`) renders as plain text and is not a link; don't report it.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] Reference-style links and autolinks are returned with the right `kind`
 - [ ] Unit test: a reference used on line 3 and defined on line 20 reports line 3
 - [ ] Unit test: an undefined reference produces no `Link`
@@ -192,7 +192,7 @@ An undefined reference (`[text][nope]`) renders as plain text and is not a link;
 
 `find_markdown_files(root: Path, include: list[str], exclude: list[str]) -> list[Path]` in `links.py`. Uses `Path.glob` for each `include` pattern (default `["**/*.md"]`), drops anything matching an `exclude` pattern via `PurePath.full_match` (Python 3.13) or `fnmatch` on the POSIX relative path (3.11/3.12), and returns a sorted, de-duplicated list so output order is deterministic.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] Unit test: against `tests/fixtures/docs/`, the default include returns every `.md` file, sorted
 - [ ] Unit test: an `exclude` of `["drafts/**"]` removes a file under `drafts/` and nothing else
 - [ ] Unit test passes on all three CI Python versions (the 3.11/3.12 fallback path is exercised)
@@ -222,7 +222,7 @@ Depends on Link Extraction (it checks `Link` records). Parallel-safe with Extern
 
 Also include explicit HTML anchors: `<a name="x">` and `<a id="x">` add `x`.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] `heading_slugs()` implements the five steps above plus HTML anchors
 - [ ] Unit test: a table of at least 12 heading-to-slug cases, including punctuation, emoji, inline code, non-ASCII letters, double spaces, and three duplicate headings (`faq`, `faq-1`, `faq-2`)
 
@@ -241,7 +241,7 @@ Resolution rules:
 
 Anchor checking is the next story; this one returns `None` for any link whose file exists.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] Resolution follows every rule above
 - [ ] Unit test: one case per rule, using `tmp_path`, including a URL-encoded filename and a `../../` path escaping `root`
 
@@ -253,7 +253,7 @@ Extend `check_internal()`: when the link has an `#anchor` and the target is a `.
 
 Anchor comparison is exact. GitHub slugs are already lowercase, and `#Setup` does **not** match `setup` on GitHub, so it doesn't here either.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] Same-file and cross-file anchors are validated as described
 - [ ] Unit test: `#setup` passes and `#Setup` fails against a `## Setup` heading
 - [ ] Unit test: `heading_slugs` is called once for a file targeted by five links
@@ -264,7 +264,7 @@ Anchor comparison is exact. GitHub slugs are already lowercase, and `#Setup` doe
 
 Integration test tying the epic together: extract every link from `tests/fixtures/docs/` with `find_markdown_files()` + `extract_links()`, run `check_internal()` on each non-external, non-ignored-scheme link with `root` set to the fixture directory, and compare the resulting `(file, line, target, reason)` set to `tests/fixtures/docs/expected.json`.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] Integration test: the set of broken links equals `expected.json` exactly, with nothing missing and nothing extra
 
 ---
@@ -299,7 +299,7 @@ Rules:
 - Send a `User-Agent: mdlinkcheck/<version>` header.
 - Strip the `#fragment` before requesting; fragments on external pages are not checked.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] `check_url()` implements every rule above
 - [ ] Unit test per rule using `httpx.MockTransport`: 200, 301 to 200, HEAD 405 then GET 200, 404, 410, 401, 403, 429, and a fragment that's stripped from the request
 
@@ -309,7 +309,7 @@ Rules:
 
 Inside `check_url()`: on a timeout, connection error, or 5xx, retry up to `retries` times (default 2) with a delay of `0.5 * 2**attempt` seconds, then report `broken` with the last error as `detail`. 4xx responses are never retried.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] Retries happen only for timeouts, connection errors, and 5xx
 - [ ] Unit test: a transport returning 503, 503, 200 ends `ok` after exactly 3 requests
 - [ ] Unit test: a transport that always times out ends `broken` after exactly 3 attempts, with `asyncio.sleep` patched so the test takes no real time
@@ -321,7 +321,7 @@ Inside `check_url()`: on a timeout, connection error, or 5xx, retry up to `retri
 
 `async check_urls(urls: Iterable[str], concurrency: int, timeout: float, retries: int) -> dict[str, Result]` in `external.py`. De-duplicates URLs after stripping fragments, bounds in-flight requests with an `asyncio.Semaphore(concurrency)` (default 8), and shares one `AsyncClient` across all requests. A sync wrapper, `run_external_checks(...)`, calls it via `asyncio.run` for the CLI.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] Unit test: three links to the same URL (two with different fragments) produce exactly one request
 - [ ] Unit test: with `concurrency=2` and a transport that records the peak number of in-flight requests across 10 URLs, the peak is 2
 
@@ -357,7 +357,7 @@ concurrency = 8
 
 `Config` is a frozen dataclass with those fields. Validation raises `ConfigError` with a message naming the offending key for: unknown keys, wrong types, invalid regexes (include the regex error), `timeout <= 0`, `concurrency < 1`, or `retries < 0`. `path=None` returns all defaults.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] `load_config()` supports every key above with the listed defaults
 - [ ] Unit test: a full file round-trips into the expected `Config`
 - [ ] Unit test: one case per validation error, asserting the message names the key
@@ -369,7 +369,7 @@ concurrency = 8
 
 `resolve_config(cli_args) -> Config` in `config.py`. Config file location: `--config FILE` if given (error if it doesn't exist), else `<PATH>/.mdlinkcheck.toml` if present, else defaults. Precedence per field: CLI flag, then config file, then default. The CLI flags that override config are `--no-external`, `--timeout`, and `--concurrency`; list-valued keys (`include`, `exclude`, `ignore_*`) are config-file only.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] Discovery and precedence follow the rules above
 - [ ] Unit test: a config file with `timeout = 5` plus `--timeout 20` yields 20; without the flag, 5; with no file and no flag, 10
 - [ ] Unit test: `--config missing.toml` raises `ConfigError`
@@ -400,7 +400,7 @@ mdlinkcheck [PATH] [--config FILE] [--no-external] [--timeout SECONDS]
 
 Exit codes: `0` nothing broken (warnings allowed), `1` at least one broken link, `2` usage or `ConfigError` (message on stderr, no traceback).
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] CLI accepts exactly the arguments above and follows the described flow
 - [ ] Integration test: `main(["tests/fixtures/docs", "--no-external"])` returns 1, and on a copy of the fixture with every broken link fixed, returns 0
 - [ ] Integration test: an invalid config returns 2 and prints the `ConfigError` message to stderr with no traceback
@@ -421,7 +421,7 @@ followed by a summary line: `Checked 42 links in 9 files: 2 broken, 1 warning.` 
 
 When the environment variable `GITHUB_ACTIONS` is `true`, also print a workflow annotation per problem (`::error file=<path>,line=<n>::broken link <target> (<reason>)`, or `::warning ...` for warnings) so problems show inline on the PR diff.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] Output format matches the examples above exactly
 - [ ] Unit test: exact expected output for a fixed set of results, including the summary line
 - [ ] Unit test: with `GITHUB_ACTIONS=true` set via `monkeypatch`, annotation lines are emitted; without it, they aren't
@@ -442,7 +442,7 @@ When the environment variable `GITHUB_ACTIONS` is `true`, also print a workflow 
 
 Same sort order as the text reporter. No annotations in JSON mode.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] `--format json` prints exactly this shape
 - [ ] Unit test: output parses with `json.loads` and equals the expected dict for a fixed set of results
 
@@ -465,7 +465,7 @@ Depends on CLI & Reporting. The Action and README both describe the finished com
 
 Also add `python -m build && twine check dist/*` as a step in `ci.yml`, so packaging breakage shows up on PRs, not at release time.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] `release.yml` created as described, and `ci.yml` builds and checks the package
 - [ ] Verified once against TestPyPI: a pre-release tag (for example `v0.1.0rc1`) publishes to TestPyPI, and `pip install -i https://test.pypi.org/simple/ mdlinkcheck==0.1.0rc1` installs a working `mdlinkcheck --help`
 - [ ] `CONTRIBUTING.md` documents the one-time trusted-publisher setup
@@ -499,7 +499,7 @@ runs:
 
 Installing from `github.action_path` means `uses: <owner>/mdlinkcheck@v0.1.0` runs exactly the code at that tag, with no PyPI dependency. Annotations come from the text reporter's `GITHUB_ACTIONS` support.
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] `action.yml` created as above
 - [ ] A workflow in this repo, `.github/workflows/action-selftest.yml`, runs `uses: ./` against `tests/fixtures/docs` with `external: "false"`, marked `continue-on-error`, and a follow-up step asserts the action step's outcome was `failure` (the fixture has broken links)
 - [ ] The same workflow runs `uses: ./` against a fixture copy with no broken links and asserts success
@@ -510,14 +510,14 @@ Installing from `github.action_path` means `uses: <owner>/mdlinkcheck@v0.1.0` ru
 
 `README.md` sections, in order: one-paragraph description; install (`pip install mdlinkcheck`); CLI usage with every flag and the exit-code table; the full `.mdlinkcheck.toml` reference (copy the defaults block from the config loader story); GitHub Action usage with a complete workflow example using `uses: <owner>/mdlinkcheck@v0.1.0` (owner left as a placeholder); and what's out of scope (no auto-fix, Markdown only, no caching).
 
-### Acceptance criteria
+##### Acceptance criteria
 - [ ] Every section above is present
 - [ ] Every CLI flag in `mdlinkcheck --help` appears in the README (checked by a unit test that parses both)
 - [ ] The README's own links pass `mdlinkcheck README.md --no-external` in CI
 
 ---
 
-## Release validation: Release validation: run against two real docs repos
+## Release validation: run against two real docs repos
 
 **Labels:** `priority:P0`  
 **Blocked by:** every epic above

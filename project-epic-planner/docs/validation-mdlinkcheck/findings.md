@@ -10,7 +10,7 @@ generated; nothing was changed after grading.
 |---|---|
 | [`mdlinkcheck-template.yaml`](./mdlinkcheck-template.yaml) | Step 1: the project template |
 | [`mdlinkcheck-plan.json`](./mdlinkcheck-plan.json) | Step 3: the plan, in `github-project-bootstrap`'s `--data` format |
-| [`mdlinkcheck-plan.md`](./mdlinkcheck-plan.md) | Step 4: rendered by `render_plan.py` |
+| [`mdlinkcheck-plan.md`](./mdlinkcheck-plan.md) | Step 4: rendered by `render_plan.py`. Re-rendered after the dog-breed-matcher run, when the renderer started nesting ticket-body headings and stopped doubling the "Release validation" prefix. Only heading lines changed; the JSON is untouched. |
 
 **Project:** `mdlinkcheck`, a Python CLI and GitHub Action that checks
 Markdown docs for broken internal links, anchors, and external URLs.

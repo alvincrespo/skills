@@ -120,6 +120,16 @@ the observable result. A test or check that can't fail as specified —
 wrong input type, nothing to match — doesn't count, however specific it
 reads; see Rule 2's executability pass.
 
+**Changed contracts.** When a story changes behavior that an earlier
+story's tests assert — wrapping a return value, renaming a key, adding a
+required argument — its acceptance criteria include updating those tests,
+naming them. In the `dog-breed-matcher` cold run, one story tested that
+`Adoption.provider("fake")` returns a `FakeProvider`; a later caching
+story made `Adoption.provider` wrap every result in a `CachedProvider`
+and never mentioned the earlier test, which would then fail. For each
+story, check what it changes against the assertions in the stories
+before it.
+
 ## 4. Repo and config choices are runtime parameters, never hardcoded
 
 **Rule.** Which repo, org, owner, account, environment, or path something
@@ -186,6 +196,19 @@ stories need the blocker, either move those stories into a later epic
 delay, say in the epic body which stories actually need the blocker and
 that the rest are held back deliberately.
 
+**Hidden dependencies.** The reverse also happens: an epic declared
+parallel-safe whose acceptance criteria quietly need another epic's
+output. So for each acceptance criterion, ask what it relies on — a
+task, a table, a log line, a route — and which story produces it. If
+that story is in an epic outside this one's `depends_on` (directly or
+transitively), the dependency is real and undeclared. In the
+`dog-breed-matcher` cold run, the Deployment epic was declared
+parallel-safe with Breed Data, but two of its stories required
+`breeds:load` in the deploy logs — a task Breed Data's seed-loader story
+creates. Either add the dependency, or rewrite the criterion so it holds
+without the other epic (and move the check to a story that runs after
+both).
+
 ---
 
 ## Before handing a plan back for review
@@ -199,11 +222,15 @@ breaks.
    criterion can be executed — and can fail — using only what the plan
    defines (seams, full signatures, relative-to for defaults, exact
    external targets, confirmed mechanisms).
-3. Every leaf story that changes code has a named, specific test criterion.
+3. Every leaf story that changes code has a named, specific test
+   criterion, and any story that changes an earlier story's tested
+   behavior updates those tests.
 4. No specific repo, owner, or path is hardcoded as *the* target.
 5. Every `depends_on` entry has a "because" in the epic body, holds for
-   every story in the epic (or the body says which stories it's for), and
-   nothing is blocked just because of where it appears in the document.
+   every story in the epic (or the body says which stories it's for),
+   nothing is blocked just because of where it appears in the document,
+   and no acceptance criterion relies on output from an epic that isn't
+   (transitively) in `depends_on`.
 
 If the plan only passes after substantial rewriting by the user, that's a
 signal this document needs revising, not just that one plan.
