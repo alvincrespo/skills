@@ -138,6 +138,21 @@ class RenderTests(unittest.TestCase):
         self.assertTrue(nested.startswith("##### What\n"))
         self.assertTrue(nested.endswith("\n##### Acceptance criteria"))
 
+    def test_fence_line_with_info_string_does_not_close_open_fence(self) -> None:
+        body = "## What\n```\nexample:\n```ruby\n```\n## AC"
+        self.assertEqual(render_plan._nest(body, 4),
+                         "##### What\n```\nexample:\n```ruby\n```\n##### AC")
+
+    def test_stories_sit_under_their_own_section_not_the_epic_bodys_last_heading(self) -> None:
+        plan = _plan()
+        plan["epics"][0]["body"] = "## Goal\ntext\n## Unblocks\nmore"
+        md = render_plan.render(plan)
+        unblocks = md.index("### Unblocks")
+        stories = md.index("### Stories in this epic (1)")
+        story = md.index("#### 1.1 Story A1")
+        self.assertLess(unblocks, stories)
+        self.assertLess(stories, story)
+
     def test_heading_levels_cap_at_six(self) -> None:
         self.assertEqual(render_plan._nest("# A\n### B", 4), "##### A\n###### B")
 

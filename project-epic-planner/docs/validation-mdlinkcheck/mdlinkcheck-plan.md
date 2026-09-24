@@ -31,6 +31,8 @@ Packaging, CI, and the shared test fixture every later epic tests against.
 
 No dependencies. Everything else depends on it, because every other epic's acceptance criteria are tests that need the package importable, `pytest` wired up, and CI running them.
 
+### Stories in this epic (3)
+
 #### 1.1 Scaffold the Python package
 
 **Labels:** `task`, `priority:P0`, `size:S`
@@ -137,6 +139,8 @@ Turn a Markdown file into a list of `Link` records with accurate line numbers. P
 
 Depends on Project Setup (package and fixture). Both checking epics depend on this one, because they consume `Link` records and nothing else.
 
+### Stories in this epic (4)
+
 #### 2.1 Define the Link record
 
 **Labels:** `task`, `priority:P0`, `size:S`
@@ -208,6 +212,8 @@ Decide whether a non-external link resolves: the file or directory exists, and t
 
 Depends on Link Extraction (it checks `Link` records). Parallel-safe with External Link Checking: the two share only the `Link` type and never call each other, so they can be built at the same time.
 
+### Stories in this epic (4)
+
 #### 3.1 Generate GitHub-compatible heading slugs
 
 **Labels:** `task`, `priority:P0`, `size:M`
@@ -278,6 +284,8 @@ Check `http(s)://` links with real requests: bounded concurrency, each URL check
 
 Depends on Link Extraction. Parallel-safe with Internal Link Checking (see that epic). P1 rather than P0 because the tool is already useful offline with `--no-external`; internal checking is the core value.
 
+### Stories in this epic (3)
+
 #### 4.1 Check a single URL
 
 **Labels:** `task`, `priority:P1`, `size:M`
@@ -336,6 +344,8 @@ A `.mdlinkcheck.toml` file for per-repo settings, with CLI flags overriding it. 
 
 Depends only on Project Setup. The loader produces a plain `Config` object and never imports the checkers, so it's parallel-safe with Link Extraction and both checking epics. CLI & Reporting is where config values are wired into the checks.
 
+### Stories in this epic (2)
+
 #### 5.1 Load and validate .mdlinkcheck.toml
 
 **Labels:** `task`, `priority:P1`, `size:M`
@@ -384,6 +394,8 @@ concurrency = 8
 The `mdlinkcheck` command: wire config, extraction, and both checkers together, and report results in a form humans, scripts, and GitHub Actions can each use.
 
 Depends on Internal Link Checking, External Link Checking, and Configuration. It calls all three, and its end-to-end tests run them together. It can't be meaningfully tested against stubs, since the point of this epic is the integration.
+
+### Stories in this epic (3)
 
 #### 6.1 Wire up the CLI and exit codes
 
@@ -456,6 +468,8 @@ Same sort order as the text reporter. No annotations in JSON mode.
 Make it installable: a PyPI release, a composite GitHub Action, and a README.
 
 Depends on CLI & Reporting. The Action and README both describe the finished command-line interface, and publishing before the interface is settled would ship a version whose flags later change.
+
+### Stories in this epic (3)
 
 #### 7.1 Publish to PyPI on version tags
 

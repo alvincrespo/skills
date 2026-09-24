@@ -40,6 +40,8 @@ None. This is the root of the graph.
 Breed Data, Lifestyle Quiz, Adoption Provider Integration, and Deployment can all start as soon as this epic closes, and they can run in parallel with each other.
 
 
+### Stories in this epic (2)
+
 #### 1.1 Generate the Rails app with Postgres, Tailwind, and CI
 
 **Labels:** `task`, `priority:P0`, `size:S`
@@ -93,6 +95,8 @@ A `Breed` model with a fixed trait set, plus a curated, version-controlled seed 
 - **Adoption Provider Integration.** Its interface takes plain breed-name strings, not `Breed` records.
 - **Deployment.** The seed loader hooks into the generated `bin/docker-entrypoint` inside this epic, so Deployment doesn't need to wait for it.
 
+
+### Stories in this epic (3)
 
 #### 2.1 Create Breed model with trait columns and validations
 
@@ -226,6 +230,8 @@ All stories in this epic use this set:
 | `size_pref` | Preferred size? | `small`, `medium`, `large`, `any` |
 | `noise` | How much barking can you tolerate? | `low`, `high` |
 
+
+### Stories in this epic (4)
 
 #### 3.1 Define quiz questions in config and load them
 
@@ -365,6 +371,8 @@ Pipeline: `Profile.from_answers` → `Engine#call` (applies `Filters`, scores, r
 - **Breed Detail Pages.** It renders `Breed` records directly and never scores.
 - **Adoption Provider Integration** and **Deployment.**
 
+
+### Stories in this epic (5)
 
 #### 4.1 Map quiz answers to a matching profile
 
@@ -555,6 +563,8 @@ Public pages for every breed: an index at `/breeds` and a detail page at `/breed
 - **Matching Engine** and **Lifestyle Quiz.** Detail pages never score or read answers. Results & Sharing links result cards here, so it depends on this epic. This epic depends only on Breed Data, which Matching Engine also needs, so it will usually finish before Matching does, and that dependency adds no real delay.
 
 
+### Stories in this epic (2)
+
 #### 5.1 Build breed detail page
 
 **Labels:** `task`, `priority:P0`, `size:S`
@@ -606,6 +616,8 @@ Results are recomputed from the stored answers on every view, not frozen. If the
 
 The `results/:token` route and `QuizSubmission` come from Lifestyle Quiz, which Matching Engine already depends on.
 
+
+### Stories in this epic (2)
 
 #### 6.1 Render results page for a quiz submission
 
@@ -665,6 +677,8 @@ A provider-agnostic way to search for adoptable dogs by breed and location. The 
 ### Parallel-safe with
 Breed Data, Lifestyle Quiz, Matching Engine, and everything else. Slug-to-provider breed-name mapping and the results-page UI need both this epic and Results & Sharing, so they live in a later epic, Adoption Listings on Results. That keeps this whole epic unblocked from day one.
 
+
+### Stories in this epic (4)
 
 #### 7.1 Evaluate adoption listing providers and record the choice
 
@@ -795,6 +809,8 @@ Breed Data is reached transitively through Results & Sharing. The breed-map lint
 Both stories in this epic genuinely need both blockers. They were split out of the two parent epics so neither parent waits on the other.
 
 
+### Stories in this epic (2)
+
 #### 8.1 Map breed slugs to provider breed names
 
 **Labels:** `task`, `priority:P0`, `size:S`
@@ -857,6 +873,8 @@ The app deploys with Kamal to a host chosen entirely by configuration. No hostna
 ### Parallel-safe with
 Everything else. Breed loading on deploy is wired into `bin/docker-entrypoint` by the Breed Data epic, and adoption config is plain environment variables, so this epic doesn't wait for either. Start it alongside Breed Data and Lifestyle Quiz rather than at the end.
 
+
+### Stories in this epic (3)
 
 #### 9.1 Parameterize Kamal deploy config via environment
 

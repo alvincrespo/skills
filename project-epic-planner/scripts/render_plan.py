@@ -104,7 +104,10 @@ def _nest(body: str, parent_level: int) -> str:
             marker = m.group(1)
             if fence is None:
                 fence = marker
-            elif marker[0] == fence[0] and len(marker) >= len(fence):
+            elif (marker[0] == fence[0] and len(marker) >= len(fence)
+                  and not line[m.end():].strip()):
+                # A closing fence can't carry an info string (CommonMark), so
+                # a ```ruby line inside a plain ``` block is content, not a close.
                 fence = None
             continue
         if fence is None and (h := _HEADING.match(line)):
@@ -166,6 +169,10 @@ def render(plan: dict) -> str:
         w(f"**Blocked by:** {', '.join(epic.get('depends_on', [])) or '—'}")
         w("")
         w(_nest(epic["body"], 2))
+        w("")
+        # Stories get their own section so they don't land under the epic
+        # body's last heading in the document outline.
+        w(f"### Stories in this epic ({len(epic['issues'])})")
         w("")
         for j, story in enumerate(epic["issues"], start=1):
             w(f"#### {i}.{j} {story['title']}")
