@@ -29,10 +29,28 @@ This repo is its own Claude Code plugin marketplace. In Claude Code:
 /plugin install alvincrespo-skills@alvincrespo-skills
 ```
 
-Or install the skills individually:
+Or install the skills with the `skills` CLI:
 
 ```bash
 npx skills add alvincrespo/skills --agent claude-code
+```
+
+Install all four together. They reuse each other's code rather than
+duplicating it: `github-project-bootstrap` runs `github-labels-setup`'s
+script, and `project-epic-planner` validates plans with
+`github-project-bootstrap`'s loader. Each expects the other to be
+installed next to it.
+
+### Standalone `.skill` files
+
+Only `github-labels-setup` is available as a standalone `.skill` file,
+because it's the only skill that works on its own. The two GitHub skills
+also can't be packaged: they set `disable-model-invocation` so Claude
+never creates repos or issues unprompted, and the `.skill` format has no
+equivalent. To build it:
+
+```bash
+scripts/package-standalone-skills.sh   # writes dist/github-labels-setup.skill
 ```
 
 ## License

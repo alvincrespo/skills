@@ -40,8 +40,11 @@ repo-init and bootstrap → a real, fully-tracked GitHub Project exists.
 - [ ] The full chain (repo-init → plan → review → labels + bootstrap) has
       been run end-to-end against a real, disposable repo — not just each
       skill tested in isolation
-- [ ] Each skill also packaged as a standalone `.skill` file, for anyone
-      who wants one skill rather than the whole plugin
+- [ ] Every self-contained, model-invocable skill (today, only
+      `github-labels-setup`) also packaged as a standalone `.skill` file,
+      for anyone who wants one skill rather than the whole plugin. The
+      others ship only via the plugin: they depend on sibling skills, or
+      set `disable-model-invocation`, which the `.skill` format can't carry
 - [ ] `github-repo-init` and `github-project-bootstrap` are
       user-invoked-only (`disable-model-invocation: true`); Claude never
       fires either from inferred context alone
