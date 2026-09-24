@@ -48,7 +48,7 @@ have been its own story.
 ### Rule 2: Every ticket is self-contained: **partial fail**
 
 No ticket points to outside context (no "as discussed" or similar), and
-most name exact signatures, file shapes, commands, and formats. But four
+most name exact signatures, file shapes, commands, and formats. But five
 tickets would leave a cold implementer guessing, and one of those guesses
 publishes to the wrong place:
 
@@ -80,6 +80,15 @@ publishes to the wrong place:
    exists (the default case), what `root` is relative to (the working
    directory, or `PATH`) is never stated. Every root-absolute link
    depends on this.
+5. **Write the README: a check that passes trivially.** *Missed by my
+   grading; caught by the PR's code review.* Its criterion says the
+   README's own links must pass `mdlinkcheck README.md --no-external` in
+   CI. But the plan only defines `PATH` as a directory:
+   `find_markdown_files()` globs `**/*.md` under it, which matches nothing
+   under a file, and config discovery looks for `<PATH>/.mdlinkcheck.toml`.
+   Built as written, that CI step checks 0 links and passes even when the
+   README has broken links. The ticket relies on single-file input that
+   no ticket defines.
 
 Smaller: `expected.json` paths are fixture-root-relative, the text
 reporter's paths are cwd-relative, and `Link.source` is never specified
@@ -94,9 +103,10 @@ exactly 3 requests"). The four stories without "Unit test"/"Integration
 test" wording (CI workflow, PyPI release, GitHub Action, README) are
 infrastructure. Each still has a checkable verification: a
 deliberately red CI run, a self-test workflow asserting failure and
-success, and a test that cross-checks `--help` against the README. The
-PyPI story's verification step is the flawed one, but that's the Rule 2
-problem above.
+success, and a test that cross-checks `--help` against the README. Two
+of those verification steps are flawed: the PyPI story's, and the
+README's self-check, which can't fail. Both are counted under Rule 2
+above, since the test *exists* but can't do its job as specified.
 
 ### Rule 4: Runtime parameters, never hardcoded: **pass**
 
@@ -125,11 +135,16 @@ whole epic waits. The rules doc doesn't say what to do about that.
 
 Quality did **not** fully hold without manual correction. Rules 1, 3 and
 4 held; Rule 5 held with an over-constraint. Rule 2 needed correction in
-four tickets, one of which would publish a release candidate to real PyPI
+five tickets, one of which would publish a release candidate to real PyPI
 if followed literally. Per this issue's criteria, that's a signal to
 revise the reference doc, not just this output. None of these failures
 is a phrase the current Rule 2 check searches for. They're gaps *inside*
 tickets that look self-contained.
+
+The fifth gap was found by an independent code review of this PR, not by
+the grading pass. That's direct evidence for the same-author bias caveat
+above: the author of the rules, grading their own plan, missed a
+failure the rules should have caught.
 
 ## Recommendations
 
@@ -143,6 +158,9 @@ Revise `ticket-quality-rules.md`:
   - Every default says what it's relative to.
   - A verification step that touches an external service names exactly
     which service and how it's targeted.
+  - Every check can actually fail: its inputs are ones the plan defines
+    (not, say, a file where only a directory is supported), so a pass
+    means something.
 - **Rule 2 check:** a ticket that prescribes a library mechanism
   ("the token's position", "the `markup` attribute") must be one that's
   been confirmed to exist, or be phrased as the outcome needed rather
