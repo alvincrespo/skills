@@ -2,7 +2,7 @@
 """
 Create or update a GitHub label taxonomy on a repo from a JSON config file.
 
-    python scripts/ensure_labels.py --repo <owner>/<repo> --labels-file labels/default.json
+    python3 github-labels-setup/scripts/ensure_labels.py --repo <owner>/<repo> --labels-file github-labels-setup/labels/default.json
 
 The labels file is a JSON list of objects, each with a "name", "color"
 (hex, no leading "#") and "description" -- e.g.:

@@ -6,7 +6,7 @@ Bootstrap a GitHub repo + Project (v2) from a --data JSON file.
     gh auth refresh -s project      # project scope isn't in gh's default scopes
     gh repo create <owner>/pr-agent --private --clone
     cd pr-agent
-    python scripts/bootstrap_github_project.py --repo <owner>/pr-agent --data plan.json \
+    python3 github-project-bootstrap/scripts/bootstrap_github_project.py --repo <owner>/pr-agent --data plan.json \
         [--labels-file path/to/labels.json]
 
 The --data file is a JSON object with three top-level keys:
@@ -166,8 +166,8 @@ def load_data(data_file: str) -> dict:
     return data
 
 
-ENSURE_LABELS_SCRIPT = Path(__file__).parent.parent / "github-labels-setup" / "scripts" / "ensure_labels.py"
-DEFAULT_LABELS_FILE = Path(__file__).parent.parent / "github-labels-setup" / "labels" / "default.json"
+ENSURE_LABELS_SCRIPT = Path(__file__).parent.parent.parent / "github-labels-setup" / "scripts" / "ensure_labels.py"
+DEFAULT_LABELS_FILE = Path(__file__).parent.parent.parent / "github-labels-setup" / "labels" / "default.json"
 
 
 def ensure_labels(owner: str, repo: str, labels_file: Path) -> None:

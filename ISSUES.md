@@ -3,7 +3,7 @@
 
 # ISSUES.md — every epic and issue, in full
 
-6 epics, 34 total issues (epics + children + release validation). This is what `scripts/bootstrap_github_project.py` creates in GitHub — review it here first.
+6 epics, 34 total issues (epics + children + release validation). This is what `github-project-bootstrap/scripts/bootstrap_github_project.py` creates in GitHub — review it here first.
 
 **Milestone:** v1 — Four Skills Shipped & Shareable
 
