@@ -50,6 +50,9 @@ Following the ticket-quality rules:
 - **Stories** under each epic, one per independently testable unit of
   work, each with a body carrying exact commands, schemas, paths, and a
   `### Acceptance criteria` checklist that includes a specific test.
+  Use `###` or deeper for headings inside ticket bodies; the renderer
+  nests them under each story either way, but GitHub shows the body
+  as-is.
 - **Dependencies** on each epic (`depends_on`) only where it's genuinely
   blocked, with the "because" written into the epic's body — and a note
   on notable parallel-safe pairs.

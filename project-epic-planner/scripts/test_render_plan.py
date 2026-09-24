@@ -34,7 +34,7 @@ def _plan() -> dict:
             {"title": "Epic: B", "depends_on": ["Epic: A"], "body": "B body.",
              "issues": [{"title": "Story B1", "body": "B1 body."}]},
         ],
-        "release_validation_issue": {"title": "Release validation", "labels": [], "body": "RV."},
+        "release_validation_issue": {"title": "RV", "labels": [], "body": "RV."},
     }
 
 
@@ -79,7 +79,7 @@ class CheckPlanTests(unittest.TestCase):
         problems = render_plan.check_plan(_plan(), LABELS - {"epic", "task"})
         self.assertIn("'Epic: A' uses label(s) not in the labels file: epic", problems)
         self.assertIn("'Story B1' uses label(s) not in the labels file: task", problems)
-        self.assertFalse(any("Release validation" in p for p in problems))
+        self.assertFalse(any("'RV'" in p for p in problems))
 
     def test_non_string_label_and_title_are_reported_not_raised(self) -> None:
         plan = _plan()
@@ -97,7 +97,7 @@ class RenderTests(unittest.TestCase):
         self.assertIn("2 epics, 2 stories, 1 release-validation issue — 5 issues in total.", md)
         self.assertIn("| 2 | Epic: B | Epic: A | 1 |", md)
         for title in ("## 1. Epic: A", "#### 1.1 Story A1", "## 2. Epic: B",
-                      "#### 2.1 Story B1", "## Release validation: Release validation"):
+                      "#### 2.1 Story B1", "## Release validation: RV"):
             self.assertIn(title, md)
 
     def test_pipe_in_title_is_escaped_in_dependency_table(self) -> None:
@@ -107,6 +107,61 @@ class RenderTests(unittest.TestCase):
         md = render_plan.render(plan)
         self.assertIn("| 1 | Epic: CLI \\| API | — | 1 |", md)
         self.assertIn("| 2 | Epic: B | Epic: CLI \\| API | 1 |", md)
+
+    def test_story_body_headings_nest_below_story_heading(self) -> None:
+        plan = _plan()
+        plan["epics"][0]["issues"][0]["body"] = "## What\nDo it.\n\n## Acceptance criteria\n- [ ] x"
+        md = render_plan.render(plan)
+        self.assertIn("\n##### What\n", md)
+        self.assertIn("\n##### Acceptance criteria\n", md)
+        self.assertNotIn("\n## What\n", md)
+
+    def test_epic_and_rv_body_headings_nest_below_level_two(self) -> None:
+        plan = _plan()
+        plan["epics"][0]["body"] = "# Goal\ntext\n## Detail\nmore"
+        plan["release_validation_issue"]["body"] = "## Checks\n1. run it"
+        md = render_plan.render(plan)
+        self.assertIn("\n### Goal\n", md)
+        self.assertIn("\n#### Detail\n", md)
+        self.assertIn("\n### Checks\n", md)
+
+    def test_already_deep_headings_are_left_alone(self) -> None:
+        body = "text\n\n###### Deep\n"
+        self.assertEqual(render_plan._nest(body, 4), body)
+
+    def test_hash_lines_inside_code_fences_are_not_headings(self) -> None:
+        body = ("## What\n```ruby\n# a comment\n## not a heading\n```\n"
+                "~~~bash\n# shell comment\n~~~\n## Acceptance criteria")
+        nested = render_plan._nest(body, 4)
+        self.assertIn("\n# a comment\n## not a heading\n", nested)
+        self.assertIn("\n# shell comment\n", nested)
+        self.assertTrue(nested.startswith("##### What\n"))
+        self.assertTrue(nested.endswith("\n##### Acceptance criteria"))
+
+    def test_fence_line_with_info_string_does_not_close_open_fence(self) -> None:
+        body = "## What\n```\nexample:\n```ruby\n```\n## AC"
+        self.assertEqual(render_plan._nest(body, 4),
+                         "##### What\n```\nexample:\n```ruby\n```\n##### AC")
+
+    def test_stories_sit_under_their_own_section_not_the_epic_bodys_last_heading(self) -> None:
+        plan = _plan()
+        plan["epics"][0]["body"] = "## Goal\ntext\n## Unblocks\nmore"
+        md = render_plan.render(plan)
+        unblocks = md.index("### Unblocks")
+        stories = md.index("### Stories in this epic (1)")
+        story = md.index("#### 1.1 Story A1")
+        self.assertLess(unblocks, stories)
+        self.assertLess(stories, story)
+
+    def test_heading_levels_cap_at_six(self) -> None:
+        self.assertEqual(render_plan._nest("# A\n### B", 4), "##### A\n###### B")
+
+    def test_rv_title_already_prefixed_is_not_doubled(self) -> None:
+        plan = _plan()
+        plan["release_validation_issue"]["title"] = "Release validation: full run"
+        md = render_plan.render(plan)
+        self.assertIn("\n## Release validation: full run\n", md)
+        self.assertNotIn("Release validation: Release validation", md)
 
     def test_render_shows_implicit_epic_and_task_labels(self) -> None:
         md = render_plan.render(_plan())

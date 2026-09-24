@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -82,6 +83,46 @@ def check_plan(plan: dict, label_names: set[str]) -> list[str]:
     return problems
 
 
+_FENCE = re.compile(r"^ {0,3}(`{3,}|~{3,})")
+_HEADING = re.compile(r"^( {0,3})(#{1,6})(?=\s|$)")
+
+
+def _nest(body: str, parent_level: int) -> str:
+    """Shift a body's markdown headings so the shallowest sits one level below parent_level.
+
+    Ticket bodies are written to stand alone as GitHub issues, so they may use
+    `##` headings. Rendered under a `####` story heading, those would flatten
+    the document's outline. Lines inside fenced code blocks are never touched
+    (a Ruby or shell comment is not a heading). Levels are capped at 6.
+    """
+    lines = body.split("\n")
+    fence = None
+    heading_rows: list[tuple[int, re.Match]] = []
+    for i, line in enumerate(lines):
+        m = _FENCE.match(line)
+        if m:
+            marker = m.group(1)
+            if fence is None:
+                fence = marker
+            elif (marker[0] == fence[0] and len(marker) >= len(fence)
+                  and not line[m.end():].strip()):
+                # A closing fence can't carry an info string (CommonMark), so
+                # a ```ruby line inside a plain ``` block is content, not a close.
+                fence = None
+            continue
+        if fence is None and (h := _HEADING.match(line)):
+            heading_rows.append((i, h))
+    if not heading_rows:
+        return body
+    shift = parent_level + 1 - min(len(h.group(2)) for _, h in heading_rows)
+    if shift <= 0:
+        return body
+    for i, h in heading_rows:
+        level = min(len(h.group(2)) + shift, 6)
+        lines[i] = h.group(1) + "#" * level + lines[i][h.end():]
+    return "\n".join(lines)
+
+
 def _cell(text: str) -> str:
     return text.replace("|", "\\|")
 
@@ -127,24 +168,31 @@ def render(plan: dict) -> str:
         w(f"**Labels:** {_labels('epic', epic.get('labels', []))}  ")
         w(f"**Blocked by:** {', '.join(epic.get('depends_on', [])) or '—'}")
         w("")
-        w(epic["body"])
+        w(_nest(epic["body"], 2))
+        w("")
+        # Stories get their own section so they don't land under the epic
+        # body's last heading in the document outline.
+        w(f"### Stories in this epic ({len(epic['issues'])})")
         w("")
         for j, story in enumerate(epic["issues"], start=1):
             w(f"#### {i}.{j} {story['title']}")
             w("")
             w(f"**Labels:** {_labels('task', story.get('labels', []))}")
             w("")
-            w(story["body"])
+            w(_nest(story["body"], 4))
             w("")
         w("---")
         w("")
 
-    w(f"## Release validation: {rv['title']}")
+    rv_heading = rv["title"]
+    if not rv_heading.lower().startswith("release validation"):
+        rv_heading = f"Release validation: {rv_heading}"
+    w(f"## {rv_heading}")
     w("")
     w(f"**Labels:** {_labels(None, rv.get('labels', []))}  ")
     w("**Blocked by:** every epic above")
     w("")
-    w(rv["body"])
+    w(_nest(rv["body"], 2))
     w("")
     return "\n".join(lines)
 
