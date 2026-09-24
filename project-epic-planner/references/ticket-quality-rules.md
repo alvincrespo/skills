@@ -52,11 +52,46 @@ story explains *why* it's a factory rather than a module-level global
 (parallel worktrees would share state), because that reasoning is what
 stops a later contributor from "simplifying" it back.
 
-**Check.** Search every ticket for phrases that point outside it: "as
-discussed", "like before", "the usual way", "see the conversation", "you'll
-remember". Each one is missing content — put the content in. A reference to
-another ticket or a file in the repo is fine; a reference to something that
-only existed in a chat is not.
+**Second motivating example.** Self-contained *looking* isn't enough. The
+`mdlinkcheck` validation run (see
+[`docs/validation-mdlinkcheck/findings.md`](../docs/validation-mdlinkcheck/findings.md))
+produced tickets with exact signatures and file shapes and no "as
+discussed" anywhere, and five of them still couldn't be finished as
+written. A test demanded a mock transport that no signature accepted. A
+signature was literally elided as `run_external_checks(...)`. A default
+path never said what it was relative to. A "verify on TestPyPI" step
+used a tag that also triggered the real PyPI publish. A reference-link
+parser relied on a token "position" that markdown-it-py doesn't have. And
+a README self-check passed a file where only a directory was supported,
+so it could never fail. Every one of these is a gap *inside* a ticket, not
+a pointer outside it.
+
+**Check.** Two passes per ticket:
+
+1. **Nothing outside it.** Search for phrases that point outside the
+   ticket: "as discussed", "like before", "the usual way", "see the
+   conversation", "you'll remember". Each one is missing content — put the
+   content in. A reference to another ticket or a file in the repo is
+   fine; a reference to something that only existed in a chat is not.
+2. **Every acceptance criterion is executable from the ticket.** Walk each
+   criterion as if implementing it cold, using only what this ticket (and
+   the tickets it names) define:
+   - A test that needs a seam — an injectable client or transport, an env
+     var, a fixture — names that seam in a signature the plan spells out.
+   - No elided signatures (`(...)`, "etc."): every function a criterion
+     depends on has its full parameter list somewhere in the plan.
+   - Every default that's a path or location says what it's relative to,
+     including when the thing it's normally relative to (a config file)
+     is absent.
+   - A step that touches an external service — a package index, a
+     deploy target, a third-party API — names exactly which one and how
+     it's targeted, and doesn't collide with another trigger in the plan
+     (e.g. a tag pattern that also fires the real release).
+   - A prescribed library or API mechanism is one you've confirmed
+     exists. If you haven't, describe the outcome needed instead of the
+     mechanism.
+   - The check can actually fail: its inputs are ones the plan supports,
+     so a pass means something.
 
 ## 3. Testing is an acceptance criterion on every leaf story
 
@@ -81,7 +116,9 @@ testing first appears.
 "Tests pass" or "add tests" alone doesn't count — it doesn't say what's
 being verified. Stories that produce no code (docs, a manual run) instead
 need a criterion that's checkable by someone else: the command to run and
-the observable result.
+the observable result. A test or check that can't fail as specified —
+wrong input type, nothing to match — doesn't count, however specific it
+reads; see Rule 2's executability pass.
 
 ## 4. Repo and config choices are runtime parameters, never hardcoded
 
@@ -139,6 +176,16 @@ The graph must also satisfy the output schema's ordering constraint:
 every `depends_on` entry names an epic earlier in the `epics` array (see
 [`epic-schema.md`](../../github-project-bootstrap/references/epic-schema.md)).
 
+**Partial blocking.** `depends_on` is epic-level: if an epic depends on
+another, every story in it waits. So for each dependency, also ask
+whether it holds for *all* the epic's stories. In the `mdlinkcheck` run,
+CLI & Reporting was blocked by External Link Checking, but its
+`--no-external` path and both reporters didn't need it. When only some
+stories need the blocker, either move those stories into a later epic
+(so the rest start sooner) or, if keeping them together is worth the
+delay, say in the epic body which stories actually need the blocker and
+that the rest are held back deliberately.
+
 ---
 
 ## Before handing a plan back for review
@@ -148,11 +195,15 @@ showing the plan. Don't hand over a plan with a note saying which rules it
 breaks.
 
 1. Every story can be closed without its siblings.
-2. No ticket points to context outside itself.
+2. No ticket points to context outside itself, and every acceptance
+   criterion can be executed — and can fail — using only what the plan
+   defines (seams, full signatures, relative-to for defaults, exact
+   external targets, confirmed mechanisms).
 3. Every leaf story that changes code has a named, specific test criterion.
 4. No specific repo, owner, or path is hardcoded as *the* target.
-5. Every `depends_on` entry has a "because" in the epic body, and nothing
-   is blocked just because of where it appears in the document.
+5. Every `depends_on` entry has a "because" in the epic body, holds for
+   every story in the epic (or the body says which stories it's for), and
+   nothing is blocked just because of where it appears in the document.
 
 If the plan only passes after substantial rewriting by the user, that's a
 signal this document needs revising, not just that one plan.
