@@ -3,7 +3,7 @@
 Unit tests for bootstrap_github_project.py.
 
 Run directly:
-    python3 -m unittest scripts/test_bootstrap_github_project.py
+    python3 -m unittest github-project-bootstrap/scripts/test_bootstrap_github_project.py
 """
 
 from __future__ import annotations

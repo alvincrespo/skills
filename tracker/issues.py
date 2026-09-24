@@ -2,7 +2,7 @@
 Tracker content for alvincrespo/skills, as data rather than prose.
 
 Same pattern as pr-agent/tracker/issues.py: this is the source of truth for
-what gets created in GitHub, read by scripts/bootstrap_github_project.py
+what gets created in GitHub, read by github-project-bootstrap/scripts/bootstrap_github_project.py
 (copied over unmodified — it's already fully generic via --repo and --data
 positional args, nothing here needed to change in that script).
 

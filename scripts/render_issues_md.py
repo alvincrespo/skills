@@ -2,11 +2,11 @@
 """
 Render tracker/issues.py into a full, human-readable markdown listing.
 
-    python scripts/render_issues_md.py > ISSUES.md
+    python3 scripts/render_issues_md.py > ISSUES.md
 
 This exists so there's a reviewable document with every epic's and every
 issue's actual title, body, and acceptance criteria — the thing to read
-before running scripts/bootstrap_github_project.py and generating 35 real
+before running github-project-bootstrap/scripts/bootstrap_github_project.py and generating 35 real
 GitHub issues, not after.
 
 Deliberately generated, not hand-maintained: tracker/issues.py is the only
@@ -36,7 +36,7 @@ def render() -> str:
     w("")
     total_issues = sum(len(e["issues"]) for e in EPICS) + len(EPICS) + 1
     w(f"{len(EPICS)} epics, {total_issues} total issues (epics + children + "
-      f"release validation). This is what `scripts/bootstrap_github_project.py` "
+      f"release validation). This is what `github-project-bootstrap/scripts/bootstrap_github_project.py` "
       f"creates in GitHub — review it here first.")
     w("")
     w(f"**Milestone:** {MILESTONE['title']}")

@@ -22,7 +22,7 @@ issues — same as `pr-agent`'s `setup_repo.sh`, adapted for this repo.
 
 The table below is a summary. **For the actual content of every issue —
 title, body, full acceptance criteria — see [`ISSUES.md`](./ISSUES.md).**
-That's what `scripts/bootstrap_github_project.py` turns into 34 real
+That's what `github-project-bootstrap/scripts/bootstrap_github_project.py` turns into 34 real
 GitHub issues; review it there before running the script, not after.
 
 | Epic | Issues | Blocked by |
@@ -53,7 +53,7 @@ that skill's script). `repo creation & validation` waits on `scaffolding`
 If scope changes, edit `tracker/issues.py` first, then regenerate:
 
 ```bash
-python scripts/render_issues_md.py > ISSUES.md
+python3 scripts/render_issues_md.py > ISSUES.md
 ```
 
 Same one-way relationship as `pr-agent`: `tracker/issues.py` is the source

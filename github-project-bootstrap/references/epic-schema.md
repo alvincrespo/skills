@@ -3,7 +3,7 @@
 This is the portable data format that replaces the current
 `tracker/issues.py` Python module -- same fields (`MILESTONE`, `EPICS`,
 `RELEASE_VALIDATION_ISSUE`), expressed as JSON instead of hardcoded Python
-so `scripts/bootstrap_github_project.py` can eventually read it via a
+so `github-project-bootstrap/scripts/bootstrap_github_project.py` can eventually read it via a
 `--data <path.json>` argument instead of importing a specific module. (That
 conversion is a separate story in this epic -- this document only defines
 the shape, it doesn't change the script.)
@@ -53,7 +53,7 @@ below. Each entry:
 | Field | Type | Required | Notes |
 |---|---|---|---|
 | `epics[].title` | string | yes | Exact epic issue title, e.g. `"Epic: Skill — github-project-bootstrap"`. Every `EPICS` entry in `tracker/issues.py` today follows an `"Epic: ..."` naming convention, but nothing in the script or this schema enforces that prefix -- it's convention, not a constraint. What *is* load-bearing: this exact string is what other epics' `depends_on` entries reference, so it must match verbatim wherever it's cited. |
-| `epics[].labels` | array of strings | no (default `[]`) | Additional labels layered on top of the literal `epic` label the bootstrap script always adds (`["epic"] + epic.get("labels", [])` in `scripts/bootstrap_github_project.py`). Today's data uses this for `priority:*` and `size:*` labels. |
+| `epics[].labels` | array of strings | no (default `[]`) | Additional labels layered on top of the literal `epic` label the bootstrap script always adds (`["epic"] + epic.get("labels", [])` in `github-project-bootstrap/scripts/bootstrap_github_project.py`). Today's data uses this for `priority:*` and `size:*` labels. |
 | `epics[].depends_on` | array of strings | no (default `[]`) | Titles of other epics this epic is blocked by. Each entry becomes a `gh issue edit --add-blocked-by` link once every named epic's issue number is known. See the ordering constraint below -- this is the field it applies to. |
 | `epics[].body` | string | yes | Issue body markdown for the epic. |
 | `epics[].issues` | array of objects | yes (may be empty) | This epic's child story issues, created as GitHub sub-issues of it (`gh issue create --parent <epic-number>`). The key itself is required even if an epic currently has no children. |
@@ -79,7 +79,7 @@ every epic issue. Same three fields as a child issue -- it has no
 | `release_validation_issue.body` | string | yes | Issue body markdown. |
 
 **Note on `labels` optionality:** `epics[].labels` and
-`epics[].issues[].labels` are read in `scripts/bootstrap_github_project.py`
+`epics[].issues[].labels` are read in `github-project-bootstrap/scripts/bootstrap_github_project.py`
 via `epic.get("labels", [])` / `child.get("labels", [])` -- already
 optional today, defaulting to no extra labels. `RELEASE_VALIDATION_ISSUE`'s
 `labels`, by contrast, is read via direct dict access
@@ -108,7 +108,7 @@ preserving:
 > nothing depends on a later epic, which is what makes the bootstrap
 > script's single-pass creation order safe.
 
-And `scripts/bootstrap_github_project.py`'s epic loop relies on exactly
+And `github-project-bootstrap/scripts/bootstrap_github_project.py`'s epic loop relies on exactly
 that ordering. It walks `for epic in EPICS:` once, in array order, building
 up `epic_number_by_title` as it goes:
 
@@ -162,5 +162,5 @@ That check has to be written as real code in whatever loads the data file
 rejecting any `depends_on` entry not already in that set. This document
 only specifies the rule that check needs to enforce; implementing it is a
 separate, later story in this epic (the one that converts
-`scripts/bootstrap_github_project.py` to read `--data <path.json>`), not
+`github-project-bootstrap/scripts/bootstrap_github_project.py` to read `--data <path.json>`), not
 part of this one.
