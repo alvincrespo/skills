@@ -14,7 +14,7 @@ milestone, project board, or issue creation involved (see
 ## Invocation
 
 ```bash
-python scripts/ensure_labels.py --repo <owner>/<repo> --labels-file <path-to-labels.json>
+python3 ${CLAUDE_SKILL_DIR}/scripts/ensure_labels.py --repo <owner>/<repo> --labels-file <path-to-labels.json>
 ```
 
 `scripts/ensure_labels.py` reads the labels file and, for each entry, runs:
@@ -58,7 +58,7 @@ production use: `epic`, `task`, `safety-critical`, `priority:P0`,
 `priority:P1`, `priority:P2`, `size:S`, `size:M`, `size:L`.
 
 Treat it as a copyable starting point, not a fixed or required list. Point
-`--labels-file` at `labels/default.json` directly to reproduce that
+`--labels-file` at `${CLAUDE_SKILL_DIR}/labels/default.json` directly to reproduce that
 taxonomy on a new repo, or copy the file and edit the array — add, remove,
 rename, or recolor any entry — to match a repo's own conventions before
 running the script. Nothing about `ensure_labels.py` depends on these nine
