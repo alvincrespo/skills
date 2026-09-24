@@ -18,7 +18,8 @@ without writing the markdown:
   2. Every issue title (epics, stories, release validation) is unique.
      Bootstrap looks up existing issues by exact title, so a duplicate
      would be silently reused instead of created.
-  3. Every label used exists in the labels file (default:
+  3. Every label used -- including the `epic`/`task` label bootstrap adds
+     to every epic/story itself -- exists in the labels file (default:
      github-labels-setup/labels/default.json). An unknown label makes
      `gh issue create` fail partway through a live bootstrap run.
 """
@@ -39,32 +40,50 @@ sys.path.insert(0, str(BOOTSTRAP_SCRIPTS_DIR))
 from bootstrap_github_project import load_data  # noqa: E402
 
 
-def _all_issues(plan: dict) -> list[dict]:
-    issues: list[dict] = []
+def _all_issues(plan: dict) -> list[tuple[dict, str | None]]:
+    """Every issue bootstrap would create, paired with the label it adds itself."""
+    issues: list[tuple[dict, str | None]] = []
     for epic in plan["epics"]:
-        issues.append(epic)
-        issues.extend(epic["issues"])
-    issues.append(plan["release_validation_issue"])
+        issues.append((epic, "epic"))
+        issues.extend((story, "task") for story in epic["issues"])
+    issues.append((plan["release_validation_issue"], None))
     return issues
 
 
 def check_plan(plan: dict, label_names: set[str]) -> list[str]:
     """Checks load_data() doesn't cover. Returns a list of problems (empty = ok)."""
+    # load_data() checks that titles and labels exist, not their types; the
+    # checks below assume strings, so report bad types first and stop there.
     problems: list[str] = []
+    for issue, _ in _all_issues(plan):
+        if not isinstance(issue["title"], str):
+            problems.append(f"title must be a string, got {issue['title']!r}")
+        elif not all(isinstance(label, str) for label in issue.get("labels", [])):
+            problems.append(f"{issue['title']!r} labels must all be strings: {issue['labels']!r}")
+    if problems:
+        return problems
 
-    counts = Counter(issue["title"] for issue in _all_issues(plan))
+    counts = Counter(issue["title"] for issue, _ in _all_issues(plan))
     for title, count in counts.items():
         if count > 1:
             problems.append(f"duplicate issue title ({count}x): {title!r}")
 
-    for issue in _all_issues(plan):
-        unknown = [label for label in issue.get("labels", []) if label not in label_names]
+    # Includes the epic/task label bootstrap adds on its own: a labels file
+    # without them passes every explicit label and still fails the first
+    # `gh issue create`.
+    for issue, implicit in _all_issues(plan):
+        labels = ([implicit] if implicit else []) + issue.get("labels", [])
+        unknown = [label for label in labels if label not in label_names]
         if unknown:
             problems.append(
                 f"{issue['title']!r} uses label(s) not in the labels file: {', '.join(unknown)}"
             )
 
     return problems
+
+
+def _cell(text: str) -> str:
+    return text.replace("|", "\\|")
 
 
 def _labels(always: str | None, extra: list[str]) -> str:
@@ -96,8 +115,8 @@ def render(plan: dict) -> str:
     w("|---|---|---|---|")
     for i, epic in enumerate(epics, start=1):
         blocked_by = ", ".join(epic.get("depends_on", [])) or "—"
-        w(f"| {i} | {epic['title']} | {blocked_by} | {len(epic['issues'])} |")
-    w(f"| — | {rv['title']} | every epic | — |")
+        w(f"| {i} | {_cell(epic['title'])} | {_cell(blocked_by)} | {len(epic['issues'])} |")
+    w(f"| — | {_cell(rv['title'])} | every epic | — |")
     w("")
     w("---")
     w("")

@@ -75,6 +75,21 @@ class CheckPlanTests(unittest.TestCase):
         problems = render_plan.check_plan(plan, LABELS)
         self.assertEqual(problems, ["'Story A1' uses label(s) not in the labels file: size:XL"])
 
+    def test_labels_file_missing_implicit_epic_and_task_is_reported(self) -> None:
+        problems = render_plan.check_plan(_plan(), LABELS - {"epic", "task"})
+        self.assertIn("'Epic: A' uses label(s) not in the labels file: epic", problems)
+        self.assertIn("'Story B1' uses label(s) not in the labels file: task", problems)
+        self.assertFalse(any("Release validation" in p for p in problems))
+
+    def test_non_string_label_and_title_are_reported_not_raised(self) -> None:
+        plan = _plan()
+        plan["epics"][0]["issues"][0]["labels"] = [None]
+        plan["epics"][1]["title"] = ["not", "a", "string"]
+        self.assertEqual(render_plan.check_plan(plan, LABELS), [
+            "'Story A1' labels must all be strings: [None]",
+            "title must be a string, got ['not', 'a', 'string']",
+        ])
+
 
 class RenderTests(unittest.TestCase):
     def test_render_includes_counts_graph_and_every_title(self) -> None:
@@ -84,6 +99,14 @@ class RenderTests(unittest.TestCase):
         for title in ("## 1. Epic: A", "#### 1.1 Story A1", "## 2. Epic: B",
                       "#### 2.1 Story B1", "## Release validation: Release validation"):
             self.assertIn(title, md)
+
+    def test_pipe_in_title_is_escaped_in_dependency_table(self) -> None:
+        plan = _plan()
+        plan["epics"][0]["title"] = "Epic: CLI | API"
+        plan["epics"][1]["depends_on"] = ["Epic: CLI | API"]
+        md = render_plan.render(plan)
+        self.assertIn("| 1 | Epic: CLI \\| API | — | 1 |", md)
+        self.assertIn("| 2 | Epic: B | Epic: CLI \\| API | 1 |", md)
 
     def test_render_shows_implicit_epic_and_task_labels(self) -> None:
         md = render_plan.render(_plan())
