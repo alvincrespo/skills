@@ -98,8 +98,9 @@ What's left is generalization, not new logic:
 ```
 alvincrespo/skills/
 ├── README.md
-├── CLAUDE.md
 ├── LICENSE
+├── .claude/
+│   └── CLAUDE.md   # not at the root: plugin validation flags a root CLAUDE.md
 ├── .claude-plugin/
 │   ├── plugin.json
 │   └── marketplace.json
