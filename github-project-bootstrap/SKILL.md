@@ -22,7 +22,7 @@ explicit-only invocation.
 ## Invocation
 
 ```bash
-python scripts/bootstrap_github_project.py \
+python3 ${CLAUDE_SKILL_DIR}/../scripts/bootstrap_github_project.py \
   --repo <owner>/<repo> \
   --data <path/to/plan.json> \
   [--project-title <title>] \

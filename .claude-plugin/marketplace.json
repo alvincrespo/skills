@@ -1,0 +1,15 @@
+{
+  "name": "alvincrespo-skills",
+  "owner": {
+    "name": "Alvin Crespo",
+    "url": "https://github.com/alvincrespo"
+  },
+  "description": "Alvin Crespo's Claude Skills, served from the alvincrespo/skills repo.",
+  "plugins": [
+    {
+      "name": "alvincrespo-skills",
+      "source": "./",
+      "description": "Claude Skills for real engineering workflows: turn a project idea into a fully tracked, live GitHub Project board."
+    }
+  ]
+}

@@ -5,15 +5,27 @@ workflows — starting with a pipeline for turning a project idea into a
 fully-tracked, live GitHub Project board: plan the epics and stories,
 initialize the repo, set up labels, and bootstrap the board itself.
 
-**Status: scaffolding in progress.** No skills are packaged yet — see
-[PROJECT_PLAN.md](./PROJECT_PLAN.md) and [TRACKER.md](./TRACKER.md) for
-what's being built and in what order. This section will list each skill,
-linked to its `SKILL.md`, as they land.
+## Skills
+
+- [github-labels-setup](./github-labels-setup/SKILL.md) — create or update
+  a repo's label taxonomy from a JSON config, idempotently.
+- [github-project-bootstrap](./github-project-bootstrap/SKILL.md) — turn a
+  JSON plan into a milestone, a linked Project (v2) board, and every
+  epic/story issue. User-invoked only.
+
+More are in progress: see [PROJECT_PLAN.md](./PROJECT_PLAN.md) and
+[TRACKER.md](./TRACKER.md). A skill is listed here only once it's finished.
 
 ## Install
 
-Once the first skill lands, this repo doubles as its own Claude Code
-plugin marketplace (see [CLAUDE.md](./CLAUDE.md)):
+This repo is its own Claude Code plugin marketplace. In Claude Code:
+
+```
+/plugin marketplace add alvincrespo/skills
+/plugin install alvincrespo-skills@alvincrespo-skills
+```
+
+Or install the skills individually:
 
 ```bash
 npx skills add alvincrespo/skills --agent claude-code
