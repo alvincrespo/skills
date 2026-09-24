@@ -37,6 +37,13 @@ discovers skill folders by presence of a `SKILL.md`, so it needs no edits
 when a new skill folder is added — just re-run it after adding, removing,
 or renaming one.
 
+Standalone `.skill` packaging (`scripts/package-standalone-skills.sh`) is
+only for skills that are fully self-contained and model-invoked. A skill
+that uses a sibling skill's code, or sets `disable-model-invocation`,
+ships only via the plugin: a `.skill` install can't bring its siblings
+along or enforce the flag. Add a new skill to the script's `STANDALONE`
+list only if neither applies.
+
 No `package.json`-synced versioning. These skills are Python-scripted, not
 JS-tooled, and there's no other reason for a `package.json` to exist here.
 `.claude-plugin/plugin.json`'s `version` field is the sole source of truth.
