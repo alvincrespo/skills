@@ -49,6 +49,13 @@ JS-tooled, and there's no other reason for a `package.json` to exist here.
 `.claude-plugin/plugin.json`'s `version` field is the sole source of truth.
 
 Cut releases with `/axc-cut-release`, configured by `.claude/release.json`:
+it opens a PR bumping that `version` field, then, once merged, runs
+preflight and pushes the `vX.Y.Z` tag. The tag triggers
+`.github/workflows/release.yml`, which checks the tag matches the version,
+runs the tests, packages the standalone skills, and publishes the GitHub
+Release. Don't create releases by hand.
+
+Cut releases with `/axc-cut-release`, configured by `.claude/release.json`:
 the first run opens a PR bumping `plugin.json`'s `version`; after it
 merges, the second run preflights and pushes the `vX.Y.Z` tag. The tag
 triggers `.github/workflows/release.yml`, which checks the tag against
