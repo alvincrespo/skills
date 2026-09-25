@@ -20,11 +20,10 @@ it when a human explicitly asks, in so many words, in the current turn.
 
 Run with the project to be published as the current working directory
 — not from an empty directory, and not from this skill's own folder. Call
-the script by its path inside this skill, where `<skill-dir>` is this
-skill's base directory (the folder containing this `SKILL.md`):
+the script by its path inside this skill:
 
 ```bash
-<skill-dir>/scripts/setup_repo.sh <owner>/repo-name \
+${CLAUDE_SKILL_DIR}/scripts/setup_repo.sh <owner>/repo-name \
     [--description "..."] [--topics "a,b,c"]
 ```
 
@@ -33,7 +32,10 @@ it's missing.
 
 ### `--description`
 
-Repo description passed to `gh repo create --description`.
+Repo description passed to `gh repo create --description`. It must be a
+single line: a description containing a control character (such as a
+newline from a wrapped paste) is rejected before anything is created,
+since GitHub would reject it only after the local `git init` and commit.
 
 - Default: `"A small, growing collection of Claude Skills for real
   engineering workflows."`
