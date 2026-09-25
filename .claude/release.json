@@ -1,0 +1,32 @@
+{
+  "repo": "alvincrespo/skills",
+  "mainBranch": "main",
+  "version": {
+    "files": [
+      { "path": ".claude-plugin/plugin.json", "match": "\"version\": \"{V}\"" }
+    ]
+  },
+  "commit": {
+    "branch": "release/v{V}",
+    "title": "release: v{V}"
+  },
+  "checks": {
+    "lint": "shellcheck github-repo-init/scripts/setup_repo.sh scripts/*.sh",
+    "build": "claude plugin validate . --strict && claude plugin validate .claude-plugin/plugin.json --strict",
+    "test": "python3 -m unittest project-epic-planner/scripts/test_render_plan.py github-project-bootstrap/scripts/test_bootstrap_github_project.py github-labels-setup/scripts/test_ensure_labels.py",
+    "integrity": "gitleaks git --redact --no-banner . && scripts/package-standalone-skills.sh"
+  },
+  "release": {
+    "tagFormat": "v{V}",
+    "artifact": "github-release",
+    "workflow": ".github/workflows/release.yml",
+    "workflowChecks": [
+      "tags: [\"v*\"]",
+      "contents: write",
+      "Tag matches plugin.json version",
+      "scripts/package-standalone-skills.sh",
+      "gh release create",
+      "dist/*.skill"
+    ]
+  }
+}
