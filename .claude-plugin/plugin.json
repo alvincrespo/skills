@@ -12,6 +12,7 @@
   "keywords": ["claude-skills", "github", "github-projects", "labels", "project-planning"],
   "skills": [
     "./project-epic-planner",
+    "./github-repo-init",
     "./github-labels-setup",
     "./github-project-bootstrap"
   ]

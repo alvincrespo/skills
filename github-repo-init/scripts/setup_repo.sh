@@ -88,6 +88,13 @@ for topic in "${TOPIC_LIST[@]}"; do
 done
 [ "${#TOPIC_ARGS[@]}" -gt 0 ] || die "--topics contained no non-empty topics"
 
+# GitHub rejects descriptions containing control characters (e.g. a newline
+# from a wrapped paste), but only at `gh repo create` — after the local
+# git init and commit below. Reject it here instead.
+if [[ "${DESCRIPTION}" =~ [[:cntrl:]] ]]; then
+  die "--description contains a control character (e.g. a newline); GitHub rejects those"
+fi
+
 # Preflight: `gh repo create --source=. --remote=origin --push` creates the
 # GitHub repo before it touches local git, so a local problem found only at
 # that point leaves an empty repo behind on GitHub. Check first.

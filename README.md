@@ -11,14 +11,19 @@ initialize the repo, set up labels, and bootstrap the board itself.
   project idea into a reviewable epic/story plan with a real dependency
   graph, as JSON that `github-project-bootstrap` consumes plus a rendered
   markdown doc. Produces a document only.
+- [github-repo-init](./github-repo-init/SKILL.md) — create a GitHub repo
+  from the current project directory, push it, and set its topics.
+  User-invoked only.
 - [github-labels-setup](./github-labels-setup/SKILL.md) — create or update
   a repo's label taxonomy from a JSON config, idempotently.
 - [github-project-bootstrap](./github-project-bootstrap/SKILL.md) — turn a
   JSON plan into a milestone, a linked Project (v2) board, and every
   epic/story issue. User-invoked only.
 
-More are in progress: see [PROJECT_PLAN.md](./PROJECT_PLAN.md) and
-[TRACKER.md](./TRACKER.md). A skill is listed here only once it's finished.
+Chained together: describe a project, review the generated plan, then
+create the repo, apply labels, and bootstrap the issues. See
+[PROJECT_PLAN.md](./PROJECT_PLAN.md) for the design. A skill is listed
+here only once it's finished.
 
 ## Install
 
