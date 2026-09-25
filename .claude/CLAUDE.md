@@ -47,3 +47,12 @@ list only if neither applies.
 No `package.json`-synced versioning. These skills are Python-scripted, not
 JS-tooled, and there's no other reason for a `package.json` to exist here.
 `.claude-plugin/plugin.json`'s `version` field is the sole source of truth.
+
+Cut releases with `/axc-cut-release`, configured by `.claude/release.json`:
+the first run opens a PR bumping `plugin.json`'s `version`; after it
+merges, the second run preflights and pushes the `vX.Y.Z` tag. The tag
+triggers `.github/workflows/release.yml`, which checks the tag against
+`plugin.json`, runs the tests, packages the standalone skills, and
+publishes the GitHub Release. Don't create releases by hand. If you change
+the checks, the packaging script, or the workflow, keep `release.json`'s
+`checks` and `workflowChecks` in sync with them.

@@ -1,0 +1,70 @@
+# Publishes a GitHub Release when a vX.Y.Z tag is pushed (the tag is pushed by
+# the axc-cut-release-tag skill, driven by .claude/release.json). The release
+# gets generated notes plus the standalone github-labels-setup.skill.
+#
+# Run it by hand (Actions -> Release -> Run workflow) to do everything except
+# publish: useful for checking the build before cutting a real tag.
+
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # skill-creator's package_skill.py validates SKILL.md frontmatter with PyYAML.
+      - run: pip install pyyaml
+
+      - name: Tag matches plugin.json version
+        if: github.ref_type == 'tag'
+        run: |
+          version="$(python3 -c 'import json; print(json.load(open(".claude-plugin/plugin.json"))["version"])')"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} doesn't match plugin.json version ${version}"
+            exit 1
+          fi
+
+      - name: Unit tests
+        run: >
+          python3 -m unittest
+          project-epic-planner/scripts/test_render_plan.py
+          github-project-bootstrap/scripts/test_bootstrap_github_project.py
+          github-labels-setup/scripts/test_ensure_labels.py
+
+      # Pinned so a change upstream can't silently change what gets packaged.
+      - name: Fetch skill-creator
+        uses: actions/checkout@v4
+        with:
+          repository: anthropics/skills
+          ref: 33375500bcea98d610eb30ce10ac4e59b89c390d
+          path: .skill-creator
+          sparse-checkout: skills/skill-creator
+
+      - name: Package standalone skills
+        env:
+          SKILL_CREATOR_DIR: .skill-creator/skills/skill-creator
+        run: scripts/package-standalone-skills.sh
+
+      - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "${GITHUB_REF_NAME}"
+          --title "${GITHUB_REF_NAME}"
+          --generate-notes
+          --verify-tag
+          dist/*.skill
