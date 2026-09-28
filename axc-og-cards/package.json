@@ -1,0 +1,15 @@
+{
+  "name": "axc-og-cards",
+  "private": true,
+  "type": "module",
+  "description": "Runtime dependencies for the axc-og-cards skill. Not published; the plugin version lives in .claude-plugin/plugin.json.",
+  "scripts": {
+    "test": "node --test scripts/*.test.mjs"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "satori": "^0.33.5",
+    "sharp": "^0.35.5",
+    "yaml": "^2.9.1"
+  }
+}
