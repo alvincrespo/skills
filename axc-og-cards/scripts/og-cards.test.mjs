@@ -4,7 +4,7 @@ import { readFile, mkdtemp, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { splitFrontMatter, computeSlug, scalarValue } from "./lib/posts.mjs";
+import { splitFrontMatter, computeSlug, scalarValue, parseDate } from "./lib/posts.mjs";
 import { fitTitleFontSize, estimateLineCount, formatMonthYear } from "./lib/title.mjs";
 import { ledgerTotal } from "./lib/ledger.mjs";
 import { validateConfig } from "./lib/config.mjs";
@@ -44,6 +44,23 @@ test("scalarValue strips matching quotes and returns null for empty", () => {
   assert.equal(scalarValue(undefined), null);
 });
 
+test("keys with hyphens or digits end the previous field", () => {
+  const { data } = splitFrontMatter('---\ntitle: T\ndescription: "abc"\ncover-image: x.png\nh2: y\ncategory: c\n---\n');
+  assert.equal(data.description, "abc");
+  assert.equal(data.category, "c");
+});
+
+test("scalarValue unescapes quotes", () => {
+  assert.equal(scalarValue(['"Say \\"hi\\""']), 'Say "hi"');
+  assert.equal(scalarValue(["'it''s'"]), "it's");
+});
+
+test("parseDate returns null for empty or unparseable dates", () => {
+  assert.equal(parseDate(null), null);
+  assert.equal(parseDate("not a date"), null);
+  assert.equal(parseDate("2024-05-01").toISOString(), "2024-05-01T00:00:00.000Z");
+});
+
 // --- slugs --------------------------------------------------------------
 
 test("date-prefixed strips the date; front-matter slug wins", () => {
@@ -79,6 +96,8 @@ test("a long title shrinks, never below the minimum", () => {
 test("formatMonthYear handles a missing date", () => {
   assert.equal(formatMonthYear(null), "");
   assert.equal(formatMonthYear(new Date("2024-05-15T12:00:00Z")), "May 2024");
+  // Date-only values parse as UTC midnight; the month must not depend on the machine's zone.
+  assert.equal(formatMonthYear(new Date("2024-05-01")), "May 2024");
 });
 
 // --- ledger -------------------------------------------------------------

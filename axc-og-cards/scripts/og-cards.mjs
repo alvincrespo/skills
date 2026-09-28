@@ -37,7 +37,10 @@ async function loadCategories(file) {
   const byKey = new Map();
   if (!file || !(await exists(file))) return byKey;
   const list = YAML.parse(await readFile(file, "utf8")) ?? [];
-  for (const entry of list) byKey.set(entry.key, entry.name);
+  if (!Array.isArray(list)) {
+    throw new Error(`${file} must be a YAML list of { key, name } entries.`);
+  }
+  for (const entry of list) if (entry?.key != null) byKey.set(entry.key, entry.name);
   return byKey;
 }
 
@@ -65,6 +68,11 @@ async function main() {
 
   await mkdir(cardsDir, { recursive: true });
   await mkdir(rawDir, { recursive: true });
+  // The ledger and manifest may live in folders that don't exist yet. Create
+  // them now: a ledger write that fails after a paid call would lose the record
+  // of that spend.
+  await mkdir(path.dirname(ledgerFile), { recursive: true });
+  await mkdir(path.dirname(abs(config.manifest.path)), { recursive: true });
 
   const [allPosts, categories, ledger] = await Promise.all([
     loadPosts(postsDir, config.slugStrategy),

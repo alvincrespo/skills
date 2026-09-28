@@ -31,5 +31,7 @@ export function fitTitleFontSize(title, maxWidth, maxLines) {
 
 export function formatMonthYear(date) {
   if (!date) return "";
-  return date.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  // UTC, not the machine's zone: a date-only value like 2024-05-01 parses as UTC
+  // midnight and would otherwise print as "April 2024" west of UTC.
+  return date.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
 }

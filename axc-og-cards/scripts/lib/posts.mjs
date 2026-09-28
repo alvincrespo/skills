@@ -11,7 +11,7 @@ export function extractFrontMatterFields(block) {
   const fields = {};
   let i = 0;
   while (i < lines.length) {
-    const m = lines[i].match(/^([A-Za-z_]+):[ \t]?(.*)$/);
+    const m = lines[i].match(/^([A-Za-z_][A-Za-z0-9_-]*):[ \t]?(.*)$/);
     if (!m) {
       i++;
       continue;
@@ -19,7 +19,7 @@ export function extractFrontMatterFields(block) {
     const [, key, rest] = m;
     const valueLines = [rest];
     let j = i + 1;
-    while (j < lines.length && !/^[A-Za-z_]+:[ \t]?/.test(lines[j])) {
+    while (j < lines.length && !/^[A-Za-z_][A-Za-z0-9_-]*:[ \t]?/.test(lines[j])) {
       valueLines.push(lines[j]);
       j++;
     }
@@ -33,9 +33,9 @@ export function scalarValue(valueLines) {
   if (!valueLines) return null;
   const joined = valueLines.join(" ").trim();
   const dq = joined.match(/^"([\s\S]*)"$/);
-  if (dq) return dq[1];
+  if (dq) return dq[1].replace(/\\(["\\])/g, "$1");
   const sq = joined.match(/^'([\s\S]*)'$/);
-  if (sq) return sq[1];
+  if (sq) return sq[1].replace(/''/g, "'");
   return joined || null;
 }
 
@@ -69,6 +69,14 @@ export function computeSlug(filename, frontMatterSlug, strategy = "date-prefixed
   return frontMatterSlug || filenameSlug;
 }
 
+// An unparseable date is treated as no date, so the card omits it instead of
+// printing "Invalid Date".
+export function parseDate(value) {
+  if (!value) return null;
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
 export async function loadPosts(postsDir, slugStrategy) {
   const files = (await readdir(postsDir)).filter((f) => f.endsWith(".md"));
   const posts = [];
@@ -81,7 +89,7 @@ export async function loadPosts(postsDir, slugStrategy) {
       title: String(data.title),
       description: data.description ? String(data.description) : "",
       category: data.category ? String(data.category) : null,
-      date: data.date ? new Date(data.date) : null,
+      date: parseDate(data.date),
       image: data.image ? String(data.image) : null, // explicit front-matter override
     });
   }
