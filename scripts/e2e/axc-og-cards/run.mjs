@@ -178,9 +178,10 @@ async function runCase(def, env) {
 
   try {
     // 1. fresh copy of the cloned site
-    log.info(`Setup 1/7: copy the cloned site to ${caseDir} (without .git)`);
+    log.info(`Setup 1/7: copy the cloned site to ${caseDir} (without .git, node_modules or output)`);
     rmSync(caseDir, { recursive: true, force: true });
-    cpSync(baseSite, caseDir, { recursive: true, filter: (p) => path.basename(p) !== ".git" });
+    const SKIP = new Set([".git", "node_modules", "output", ".bridgetown-cache"]);
+    cpSync(baseSite, caseDir, { recursive: true, filter: (p) => !SKIP.has(path.basename(p)) });
 
     if (!opts.keepLegacy && existsSync(path.join(caseDir, "scripts/og-cards.mjs"))) {
       rmSync(path.join(caseDir, "scripts/og-cards.mjs"));
@@ -189,13 +190,21 @@ async function runCase(def, env) {
 
     const budget = def.configBudget ?? 0.5;
     const cfgPath = path.join(caseDir, "og-cards.config.json");
-    const template = JSON.parse(readFileSync(path.join(SKILL_DIR, "templates/og-cards.config.json"), "utf8"));
-    const config = {
-      ...template,
-      brand: { ...template.brand, byline: "Alvin Crespo", url: "alvincrespo.com" },
-      budget,
-      fonts: { ...template.fonts, sources: template.fonts.sources.map((s) => ({ ...s, path: `scripts/fonts/${path.basename(s.path)}` })) },
-    };
+    const siteConfigPath = path.join(caseDir, "og-cards.config.json");
+    let config;
+    if (existsSync(siteConfigPath)) {
+      config = { ...JSON.parse(readFileSync(siteConfigPath, "utf8")), budget };
+      log.info(`  the site has its own og-cards.config.json; using it with the budget set to ${money(budget)}`);
+    } else {
+      const template = JSON.parse(readFileSync(path.join(SKILL_DIR, "templates/og-cards.config.json"), "utf8"));
+      config = {
+        ...template,
+        brand: { ...template.brand, byline: "Alvin Crespo", url: "alvincrespo.com" },
+        budget,
+        fonts: { ...template.fonts, sources: template.fonts.sources.map((s) => ({ ...s, path: `scripts/fonts/${path.basename(s.path)}` })) },
+      };
+      log.info("  the site has no og-cards.config.json; wrote one from the skill's template with fonts in scripts/fonts (the website's layout)");
+    }
     const postsDir = path.join(caseDir, config.postsDir);
     const cardsDir = path.join(caseDir, config.cardsDir);
     const rawDir = path.join(caseDir, config.rawDir);
@@ -257,9 +266,10 @@ async function runCase(def, env) {
     if (def.mutate) { log.info("Setup 6/7: apply this case's deliberate breakage"); def.mutate(ctxBase); } else log.info("Setup 6/7: no case-specific changes");
 
     // 7. snapshot
-    const watched = [config.cardsDir, config.postsDir, "scripts/fonts"];
+    const fontDirs = [...new Set(config.fonts.sources.map((s) => path.dirname(s.path)))];
+    const watched = [config.cardsDir, config.postsDir, ...fontDirs];
     const before = snapshot(caseDir, watched);
-    log.info(`Setup 7/7: snapshot ${before.size} watched file(s) (cards, illustrations, posts, fonts) to detect stray changes`);
+    log.info(`Setup 7/7: snapshot ${before.size} watched file(s) (cards, illustrations, posts and font folders) to detect stray changes`);
 
     // --- run -----------------------------------------------------------------
     const tokens = def.args.map((a) => (a === "{post}" ? targetRel : a));

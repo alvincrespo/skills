@@ -267,14 +267,15 @@ export const CASES = [
     description: "One configured font file is deleted; the run must stop with a clear message before any paid call.",
     spendMode: "auto", args: ["{post}", "--spend", "auto"], scriptExit: 1,
     mutate(ctx) {
-      rmSync(path.join(ctx.caseDir, "scripts/fonts/Geist-Bold.ttf"));
-      ctx.log.info("  removed scripts/fonts/Geist-Bold.ttf from the case folder");
+      const font = ctx.config.fonts.sources[0].path;
+      rmSync(path.join(ctx.caseDir, font));
+      ctx.log.info(`  removed ${font} (a configured font file) from the case folder`);
     },
     changes: "none",
     validate(ctx, r) {
       expectNothingSpent(ctx, r);
       expectNoAssets(ctx, r, ctx.target.slug);
-      r.ok("output names the missing font file", /Font file not found/i.test(ctx.text) && /Geist-Bold/.test(ctx.text));
+      r.ok("output names the missing font file", /Font file not found/i.test(ctx.text) && ctx.text.includes(path.basename(ctx.config.fonts.sources[0].path)));
     },
   },
   {

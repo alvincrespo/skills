@@ -4,6 +4,12 @@ Runs the skill the way a user would, in a throwaway copy of a real site, and
 writes a report you can read to decide whether it works. It is not part of the
 skill and isn't shipped with it.
 
+By default it clones alvincrespo/website. To test against a purpose-built site
+instead, point `--repo` at the fixture (a small Bridgetown blog with posts chosen
+to cover the edge cases, and placeholder illustrations so it costs nothing to keep):
+`--repo /path/to/axc-og-fixture`. A site that ships its own `og-cards.config.json`
+is used as is (only the budget is overridden); otherwise the harness writes one.
+
 ```bash
 # show the plan and its cost; runs nothing
 node scripts/e2e/axc-og-cards/run.mjs
