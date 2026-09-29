@@ -22,6 +22,10 @@ const SKILL_NAME = "axc-og-cards";
 
 const require = createRequire(path.join(SKILL_DIR, "package.json"));
 
+// A small purpose-built Bridgetown blog, so the tests don't depend on anyone's
+// personal site. Point --repo at any other site (a URL or a local path).
+const DEFAULT_REPO = "https://github.com/alvincrespo/axc-og-fixture.git";
+
 const USAGE = `Usage: node run.mjs [options]
 
   (no --run)             print the plan and the cost, run nothing
@@ -31,12 +35,13 @@ const USAGE = `Usage: node run.mjs [options]
   --driver agent|script  agent = a headless 'claude -p' session in the case folder that
                          runs the skill (default); script = call the skill's script directly,
                          to tell a script bug from an agent/SKILL.md problem
-  --repo URL|PATH        site to clone (default https://github.com/alvincrespo/website.git)
+  --repo URL|PATH        site to clone (default ${DEFAULT_REPO})
   --ref BRANCH           branch or tag to clone
   --workdir DIR          where everything goes (default: a new folder under the system temp dir)
   --model MODEL          model for the agent driver
   --site-size N          posts kept for the backfill cases (default per case)
-  --full-site            backfill the whole site (about 48 paid images; be sure)
+  --full-site            backfill every eligible post of the site instead of a trimmed copy
+                         (the cost gate assumes up to 48 images; be sure)
   --max-spend USD        refuse to start if the planned OpenRouter spend exceeds this (default 1.00)
   --agent-max-usd USD    spend cap for each agent session (default 2)
   --timeout-min N        per-case timeout (default 12)
@@ -46,7 +51,7 @@ const USAGE = `Usage: node run.mjs [options]
 `;
 
 function parseArgs(argv) {
-  const o = { run: false, list: false, cases: "all", driver: "agent", repo: "https://github.com/alvincrespo/website.git", ref: null,
+  const o = { run: false, list: false, cases: "all", driver: "agent", repo: DEFAULT_REPO, ref: null,
     workdir: null, model: null, siteSize: null, fullSite: false, maxSpend: 1.0, agentMaxUsd: 2, timeoutMin: 12,
     freshInstall: false, keepLegacy: false, cleanup: false };
   const take = (i, flag) => {

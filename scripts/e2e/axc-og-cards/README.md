@@ -4,11 +4,18 @@ Runs the skill the way a user would, in a throwaway copy of a real site, and
 writes a report you can read to decide whether it works. It is not part of the
 skill and isn't shipped with it.
 
-By default it clones alvincrespo/website. To test against a purpose-built site
-instead, point `--repo` at the fixture (a small Bridgetown blog with posts chosen
-to cover the edge cases, and placeholder illustrations so it costs nothing to keep):
-`--repo /path/to/axc-og-fixture`. A site that ships its own `og-cards.config.json`
-is used as is (only the budget is overridden); otherwise the harness writes one.
+By default it clones [alvincrespo/axc-og-fixture](https://github.com/alvincrespo/axc-og-fixture),
+a small Bridgetown blog with posts chosen to cover the edge cases (escaped quotes
+in a title, a very long title, no category, a `slug:` that differs from the file
+name, an `image:` override, a file with no title) and placeholder illustrations, so
+the tests don't depend on anyone's personal site.
+
+To test against another site, pass `--repo <url or local path>`, for example a
+checkout of your own blog. A site that ships its own `og-cards.config.json` is used
+as is (only the budget is overridden); otherwise the harness writes one for a
+site whose fonts are in `scripts/fonts/`. The site needs at least four posts
+without an `image:` override, and its newest post must already have a card and a
+saved illustration.
 
 ```bash
 # show the plan and its cost; runs nothing
@@ -26,7 +33,7 @@ dependencies first: `npm install --prefix axc-og-cards`.
 
 ## What one run does
 
-1. **Clones** the site once (`--repo`, default alvincrespo/website) into
+1. **Clones** the site once (`--repo`, default the fixture) into
    `<workdir>/base-site`.
 2. For each case, **copies** that clone to `<workdir>/cases/<id>/` so cases
    can't affect each other, and **sets up** the case: picks the posts, cleans the
@@ -67,7 +74,8 @@ dependencies first: `npm install --prefix axc-og-cards`.
 
 The backfill cases run on a clone trimmed to the newest 3 or 4 posts (in the
 case folder only), so "backfill everything" costs cents. `--site-size N` changes
-the size; `--full-site` backfills all 48 posts (about $1.70; raise `--max-spend`).
+the size; `--full-site` backfills every eligible post instead (the cost gate assumes
+up to 48 images, about $1.70, so raise `--max-spend` to allow it).
 
 Add a case by adding an object to `cases.mjs`; the fields are documented at the
 top of that file.
