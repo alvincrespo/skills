@@ -1,0 +1,34 @@
+{
+  "postsDir": "src/_posts",
+  "slugStrategy": "date-prefixed",
+  "categoriesFile": "src/_data/categories.yml",
+  "cardsDir": "src/images/og",
+  "rawDir": "src/images/og/src",
+  "manifest": { "path": "src/_data/og_cards.yml", "format": "yaml-map" },
+  "ledger": "scripts/og-cards.ledger.json",
+
+  "budget": 5.0,
+  "model": "black-forest-labs/flux.2-pro",
+  "estimatedCostPerImage": 0.035,
+  "stylePrompt": "Flat minimal editorial illustration, thin off-black line work, a single green accent (#15803d), plenty of white space, white background, no text, no letters, no logos, no people's faces.",
+
+  "brand": {
+    "byline": "Your Name",
+    "url": "example.com",
+    "text": "#0a0a0a",
+    "muted": "#525252",
+    "accent": "#15803d",
+    "background": "#ffffff"
+  },
+
+  "fonts": {
+    "title": { "family": "Geist", "weight": 700 },
+    "meta": { "family": "Geist Mono", "weight": 400 },
+    "byline": { "family": "Geist", "weight": 600 },
+    "sources": [
+      { "family": "Geist", "weight": 700, "path": "fonts/Geist-Bold.ttf" },
+      { "family": "Geist", "weight": 600, "path": "fonts/Geist-SemiBold.ttf" },
+      { "family": "Geist Mono", "weight": 400, "path": "fonts/GeistMono-Regular.ttf" }
+    ]
+  }
+}
