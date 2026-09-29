@@ -52,7 +52,7 @@ export function selectJobs({ posts, args, postsDir, cwd, hasCard, hasRaw }) {
     for (const given of args.paths) {
       const file = path.resolve(cwd, given);
       const rel = path.relative(postsDir, file);
-      if (rel.startsWith("..") || path.isAbsolute(rel)) {
+      if (rel === ".." || rel.startsWith(`..${path.sep}`) || path.isAbsolute(rel)) {
         throw new Error(`${given} is outside the posts folder (${path.relative(cwd, postsDir) || postsDir}).`);
       }
       const post = posts.find((p) => p.file === file);
@@ -92,6 +92,9 @@ export function selectJobs({ posts, args, postsDir, cwd, hasCard, hasRaw }) {
   let cutByLimit = 0;
   for (const post of candidates) {
     if (args.renderOnly) {
+      // Rebuilds every card that has a saved illustration, whether or not it
+      // has a card now and whether or not the post sets image:. A saved
+      // illustration means a card was generated for it once.
       if (hasRaw.has(post.slug)) jobs.push({ post, needsCall: false });
       continue;
     }

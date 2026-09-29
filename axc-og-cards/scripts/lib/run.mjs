@@ -185,9 +185,11 @@ export async function run(argv, ctx = {}) {
           errOut(err.message);
           return stopWith(1);
         }
-        await writeFile(rawPath, result.buffer);
+        // Record the spend before anything else touches the disk: if saving
+        // the image fails after a billed call, the ledger must still know.
         ledger.push({ slug: post.slug, model: config.model, cost: result.cost, timestamp: new Date().toISOString() });
         await saveLedger(ledgerFile, ledger);
+        await writeFile(rawPath, result.buffer);
 
         if (result.cost === null) {
           errOut(

@@ -187,6 +187,19 @@ test("a named post with an image override is skipped unless --include-overridden
   assert.deepEqual(slugs(select({ paths: ["_posts/custom-image.md"], includeOverridden: true })), ["custom-image"]);
 });
 
+test("a post whose file name starts with two dots is still inside the folder", () => {
+  const dotted = post("..draft", { file: `${postsDir}/..draft.md` });
+  const r = selectJobs({
+    posts: [dotted],
+    args: { paths: ["_posts/..draft.md"], backfill: false, regen: false, renderOnly: false, includeOverridden: false },
+    postsDir,
+    cwd: "/site",
+    hasCard: new Set(),
+    hasRaw: new Set(),
+  });
+  assert.deepEqual(r.jobs.map((j) => j.post.slug), ["..draft"]);
+});
+
 test("a named path outside the posts folder, or not a post, is an error", () => {
   assert.throws(() => select({ paths: ["../etc/passwd"] }), /outside the posts folder/);
   assert.throws(() => select({ paths: ["/other/place/x.md"] }), /outside the posts folder/);

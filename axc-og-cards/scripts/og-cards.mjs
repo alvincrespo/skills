@@ -9,7 +9,7 @@
 //
 // Targets and modifiers:
 //   --regen                 replace the illustration and card of the named posts
-//   --render-only           rebuild cards from saved illustrations; costs nothing
+//   --render-only           rebuild every card that has a saved illustration; costs nothing
 //   --include-overridden    also cover posts whose front matter sets image:
 //   --limit N               backfill only: at most N new illustrations
 //   --since D / --before D  backfill only: by post date (YYYY-MM-DD)

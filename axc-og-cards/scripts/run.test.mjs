@@ -144,6 +144,16 @@ test("every paid call is recorded before anything else can fail, and the manifes
   assert.equal(await manifestOf(dir), "beta: true\n");
 });
 
+test("the spend is recorded even if saving the image fails afterwards", async () => {
+  const dir = await makeProject();
+  await mkdir(path.join(dir, "raw", "alpha.png"), { recursive: true }); // a folder where the file goes, so the write fails
+  const h = harness(dir);
+  // --regen makes the call even though something already sits at that path.
+  assert.equal(await run(["posts/alpha.md", "--regen", "--spend", "auto"], h.ctx), 1);
+  assert.equal(h.calls.length, 1);
+  assert.deepEqual((await ledgerOf(dir)).map((e) => [e.slug, e.cost]), [["alpha", 0.03]]);
+});
+
 test("a missing usage.cost stops the run, keeps the image and records cost: null", async () => {
   const dir = await makeProject({ posts: ["alpha", "beta"] });
   const h = harness(dir, image(null));
