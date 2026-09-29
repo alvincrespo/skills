@@ -1,9 +1,9 @@
 // Requests one square illustration from OpenRouter's image API.
-export async function generateIllustration({ post, apiKey, model, stylePrompt }) {
+export async function generateIllustration({ post, apiKey, model, stylePrompt, fetchImpl = fetch }) {
   const subject = [post.title, post.description].filter(Boolean).join(". ").slice(0, 400);
   const prompt = `${subject}\n\nStyle: ${stylePrompt}`;
 
-  const response = await fetch("https://openrouter.ai/api/v1/images", {
+  const response = await fetchImpl("https://openrouter.ai/api/v1/images", {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,

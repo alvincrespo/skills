@@ -85,6 +85,7 @@ export async function loadPosts(postsDir, slugStrategy) {
     const { data } = splitFrontMatter(raw);
     if (!data.title) continue; // skip files without real front matter (e.g. drafts)
     posts.push({
+      file: path.join(postsDir, file),
       slug: computeSlug(file, data.slug, slugStrategy),
       title: String(data.title),
       description: data.description ? String(data.description) : "",
