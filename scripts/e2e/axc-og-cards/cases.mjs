@@ -119,7 +119,7 @@ export const CASES = [
     id: "backfill",
     title: "Backfill, no restricted budget",
     description: "Clean every card and illustration, then --backfill the whole (trimmed) site. Newest posts must come first.",
-    paid: true, spendMode: "auto", siteSize: 3, clean: "all", keyMode: "real", changes: "site",
+    paid: true, expectCalls: 3, spendMode: "auto", siteSize: 3, clean: "all", keyMode: "real", changes: "site",
     args: ["--backfill", "--spend", "auto"], scriptExit: 0,
     async validate(ctx, r) {
       const expected = ctx.posts.map((p) => p.slug);
