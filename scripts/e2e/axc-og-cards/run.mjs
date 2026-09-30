@@ -41,7 +41,7 @@ const USAGE = `Usage: node run.mjs [options]
   --model MODEL          model for the agent driver
   --site-size N          posts kept for the backfill cases (default per case)
   --full-site            backfill every eligible post of the site instead of a trimmed copy
-                         (the cost gate assumes up to 48 images; be sure)
+                         (the cost gate counts the site's real posts after cloning; be sure)
   --max-spend USD        refuse to start if the planned OpenRouter spend exceeds this (default 1.00)
   --agent-max-usd USD    spend cap for each agent session (default 2)
   --timeout-min N        per-case timeout (default 12)
@@ -100,23 +100,36 @@ function selectCases(spec) {
   return ids.map((id) => CASES.find((c) => c.id === id));
 }
 
-const EST = 0.035; // matches the config template's estimatedCostPerImage
-function plannedCalls(def, opts) {
-  if (opts.fullSite && def.siteSize) return def.id === "backfill" ? 48 : def.expectCalls;
-  if (opts.siteSize && def.id === "backfill") return opts.siteSize;
+// Only used before the site is cloned (for the plan and an early refusal). Once
+// the site is cloned the gate is redone with its real post count and the
+// estimatedCostPerImage from its own config.
+const FALLBACK_ESTIMATE = 0.035; // the skill's config template
+const FALLBACK_FULL_SITE_POSTS = 48;
+
+// Paid images a case can cause. `site` is { eligible, estimate } once known.
+function plannedCalls(def, opts, site = null) {
+  if (def.id === "backfill") {
+    const eligible = site?.eligible ?? FALLBACK_FULL_SITE_POSTS;
+    const wanted = opts.fullSite ? eligible : opts.siteSize ?? def.siteSize;
+    return Math.min(wanted, eligible);
+  }
   return def.expectCalls;
 }
 
+const plannedTotal = (cases, opts, site = null) =>
+  cases.reduce((n, c) => n + plannedCalls(c, opts, site) * (site?.estimate ?? FALLBACK_ESTIMATE), 0);
+
 function printPlan(cases, opts) {
   const rows = cases.map((c) => ({ c, calls: plannedCalls(c, opts) }));
-  const total = rows.reduce((n, r) => n + r.calls * EST, 0);
+  const total = plannedTotal(cases, opts);
   console.log(`\nPlan (${opts.driver} driver): ${cases.length} case(s)\n`);
   for (const { c, calls } of rows) {
-    console.log(`  ${c.paid ? "PAID" : "free"}  ${c.id.padEnd(28)} ${calls ? `up to ~${money(calls * EST)} (${calls} image${calls > 1 ? "s" : ""})` : "$0"}`);
+    console.log(`  ${c.paid ? "PAID" : "free"}  ${c.id.padEnd(28)} ${calls ? `up to ~${money(calls * FALLBACK_ESTIMATE)} (${calls} image${calls > 1 ? "s" : ""})` : "$0"}`);
     console.log(`        ${c.title}`);
     console.log(`        /axc-og-cards ${c.args.join(" ")}`);
   }
   console.log(`\n  Planned OpenRouter spend: about ${money(total)} (limit for this run: ${money(opts.maxSpend)})`);
+  if (opts.fullSite) console.log(`  --full-site: counted as ${FALLBACK_FULL_SITE_POSTS} images until the site is cloned; the real count is checked before any case runs.`);
   console.log(`  Paid cases need OPENROUTER_API_KEY in the environment; free cases get a dummy key so they can't spend.`);
   console.log(`  Nothing has been run. Add --run to execute.\n`);
   return total;
@@ -437,15 +450,15 @@ function scanForSecrets(dir) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const cases = selectCases(opts.cases);
-  const planned = plannedCalls;
-  const totalPlanned = cases.reduce((n, c) => n + planned(c, opts) * EST, 0);
+  const earlyTotal = plannedTotal(cases, opts);
 
   if (opts.list || !opts.run) {
     printPlan(cases, opts);
     if (opts.run === false) process.exit(0);
   }
-  if (totalPlanned > opts.maxSpend + 1e-9) {
-    console.error(`Refusing to start: the plan is about ${money(totalPlanned)}, over --max-spend ${money(opts.maxSpend)}. Pick fewer cases or raise --max-spend.`);
+  // --full-site depends on the site's size, so it's checked after the clone.
+  if (!opts.fullSite && earlyTotal > opts.maxSpend + 1e-9) {
+    console.error(`Refusing to start: the plan is about ${money(earlyTotal)}, over --max-spend ${money(opts.maxSpend)}. Pick fewer cases or raise --max-spend.`);
     process.exit(2);
   }
   const needsRealKey = cases.some((c) => c.keyMode === "real");
@@ -468,7 +481,6 @@ async function main() {
   logger.step(`axc-og-cards end-to-end run started`);
   logger.info(`work folder: ${workdir}`);
   logger.info(`driver: ${opts.driver}; cases: ${cases.map((c) => c.id).join(", ")}`);
-  logger.info(`planned OpenRouter spend: about ${money(totalPlanned)} (limit ${money(opts.maxSpend)})`);
   logger.info(`options: ${JSON.stringify({ ...opts, workdir: undefined })}`);
 
   const env = {};
@@ -496,6 +508,22 @@ async function main() {
     sharp: require("sharp"),
     YAML: require("yaml"),
   };
+
+  // The authoritative cost gate: the site's real post count and its own
+  // per-image estimate, checked before any case runs or anything is spent.
+  const siteConfigFile = path.join(baseSite, "og-cards.config.json");
+  const siteConfig = existsSync(siteConfigFile)
+    ? JSON.parse(readFileSync(siteConfigFile, "utf8"))
+    : JSON.parse(readFileSync(path.join(SKILL_DIR, "templates/og-cards.config.json"), "utf8"));
+  const siteSources = await deps.loadPosts(path.join(baseSite, siteConfig.postsDir), siteConfig.slugStrategy ?? "date-prefixed");
+  const site = { eligible: siteSources.filter((p) => !p.image).length, estimate: siteConfig.estimatedCostPerImage ?? FALLBACK_ESTIMATE };
+  const totalPlanned = plannedTotal(cases, opts, site);
+  logger.info(`site: ${siteSources.length} posts, ${site.eligible} without an image: override; estimated cost per image ${money(site.estimate)}`);
+  logger.info(`planned OpenRouter spend: about ${money(totalPlanned)} (limit ${money(opts.maxSpend)})`);
+  if (totalPlanned > opts.maxSpend + 1e-9) {
+    logger.error(`Refusing to run: the plan is about ${money(totalPlanned)}, over --max-spend ${money(opts.maxSpend)}. Pick fewer cases or raise --max-spend. Nothing was run or spent.`);
+    process.exit(2);
+  }
 
   const results = [];
   for (const def of cases) results.push(await runCase(def, { opts, logger, baseSite, workdir, reportDir, deps }));

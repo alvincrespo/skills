@@ -74,8 +74,9 @@ dependencies first: `npm install --prefix axc-og-cards`.
 
 The backfill cases run on a clone trimmed to the newest 3 or 4 posts (in the
 case folder only), so "backfill everything" costs cents. `--site-size N` changes
-the size; `--full-site` backfills every eligible post instead (the cost gate assumes
-up to 48 images, about $1.70, so raise `--max-spend` to allow it).
+the size; `--full-site` backfills every eligible post instead. The cost gate counts
+the site's real posts and uses its own `estimatedCostPerImage`, after cloning and
+before anything runs, so raise `--max-spend` if the site is large.
 
 Add a case by adding an object to `cases.mjs`; the fields are documented at the
 top of that file.
