@@ -28,9 +28,9 @@ const DEFAULT_REPO = "https://github.com/alvincrespo/axc-og-fixture.git";
 
 const USAGE = `Usage: node run.mjs [options]
 
-  (no --run)             print the plan and the cost, run nothing
+  (no --run)             clone the site, print the plan and its cost, run nothing
   --run                  do it: clone, set up each case, run it, validate, write the report
-  --list                 list the cases and exit
+  --list                 list the cases and exit (no clone, no costs)
   --cases a,b | free | paid | all    which cases (default: all)
   --driver agent|script  agent = a headless 'claude -p' session in the case folder that
                          runs the skill (default); script = call the skill's script directly,
@@ -41,7 +41,7 @@ const USAGE = `Usage: node run.mjs [options]
   --model MODEL          model for the agent driver
   --site-size N          posts kept for the backfill cases (default per case)
   --full-site            backfill every eligible post of the site instead of a trimmed copy
-                         (the cost gate counts the site's real posts after cloning; be sure)
+                         (the cost is sized from the site's real post count; be sure)
   --max-spend USD        refuse to start if the planned OpenRouter spend exceeds this (default 1.00)
   --agent-max-usd USD    spend cap for each agent session (default 2)
   --timeout-min N        per-case timeout (default 12)
@@ -100,36 +100,39 @@ function selectCases(spec) {
   return ids.map((id) => CASES.find((c) => c.id === id));
 }
 
-// Only used before the site is cloned (for the plan and an early refusal). Once
-// the site is cloned the gate is redone with its real post count and the
-// estimatedCostPerImage from its own config.
-const FALLBACK_ESTIMATE = 0.035; // the skill's config template
-const FALLBACK_FULL_SITE_POSTS = 48;
-
-// Paid images a case can cause. `site` is { eligible, estimate } once known.
-function plannedCalls(def, opts, site = null) {
+// Paid images a case can cause, sized from the cloned site: `site` is
+// { eligible, estimate }. There are no defaults: the cost can't be known until
+// the site is cloned, so nothing is estimated before then.
+function plannedCalls(def, opts, site) {
   if (def.id === "backfill") {
-    const eligible = site?.eligible ?? FALLBACK_FULL_SITE_POSTS;
-    const wanted = opts.fullSite ? eligible : opts.siteSize ?? def.siteSize;
-    return Math.min(wanted, eligible);
+    const wanted = opts.fullSite ? site.eligible : opts.siteSize ?? def.siteSize;
+    return Math.min(wanted, site.eligible);
   }
   return def.expectCalls;
 }
 
-const plannedTotal = (cases, opts, site = null) =>
-  cases.reduce((n, c) => n + plannedCalls(c, opts, site) * (site?.estimate ?? FALLBACK_ESTIMATE), 0);
+const plannedTotal = (cases, opts, site) => cases.reduce((n, c) => n + plannedCalls(c, opts, site) * site.estimate, 0);
 
-function printPlan(cases, opts) {
-  const rows = cases.map((c) => ({ c, calls: plannedCalls(c, opts) }));
-  const total = plannedTotal(cases, opts);
-  console.log(`\nPlan (${opts.driver} driver): ${cases.length} case(s)\n`);
-  for (const { c, calls } of rows) {
-    console.log(`  ${c.paid ? "PAID" : "free"}  ${c.id.padEnd(28)} ${calls ? `up to ~${money(calls * FALLBACK_ESTIMATE)} (${calls} image${calls > 1 ? "s" : ""})` : "$0"}`);
+function listCases(cases) {
+  console.log(`\n${cases.length} case(s):\n`);
+  for (const c of cases) {
+    console.log(`  ${c.paid ? "PAID" : "free"}  ${c.id.padEnd(28)} ${c.title}`);
+    console.log(`        /axc-og-cards ${c.args.join(" ")}`);
+  }
+  console.log("\n  What each costs depends on the site being tested; run without --run to see the plan.\n");
+}
+
+function printPlan(cases, opts, site, siteLabel) {
+  const total = plannedTotal(cases, opts, site);
+  console.log(`\nPlan (${opts.driver} driver) for ${siteLabel}: ${cases.length} case(s)`);
+  console.log(`The site has ${site.eligible} post(s) without an image: override; estimated cost per image ${money(site.estimate)}.\n`);
+  for (const c of cases) {
+    const calls = plannedCalls(c, opts, site);
+    console.log(`  ${c.paid ? "PAID" : "free"}  ${c.id.padEnd(28)} ${calls ? `up to ~${money(calls * site.estimate)} (${calls} image${calls > 1 ? "s" : ""})` : "$0"}`);
     console.log(`        ${c.title}`);
     console.log(`        /axc-og-cards ${c.args.join(" ")}`);
   }
-  console.log(`\n  Planned OpenRouter spend: about ${money(total)} (limit for this run: ${money(opts.maxSpend)})`);
-  if (opts.fullSite) console.log(`  --full-site: counted as ${FALLBACK_FULL_SITE_POSTS} images until the site is cloned; the real count is checked before any case runs.`);
+  console.log(`\n  Planned OpenRouter spend: about ${money(total)} (limit for this run: ${money(opts.maxSpend)})${total > opts.maxSpend + 1e-9 ? "  <- over the limit; --run would refuse" : ""}`);
   console.log(`  Paid cases need OPENROUTER_API_KEY in the environment; free cases get a dummy key so they can't spend.`);
   console.log(`  Nothing has been run. Add --run to execute.\n`);
   return total;
@@ -450,19 +453,14 @@ function scanForSecrets(dir) {
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   const cases = selectCases(opts.cases);
-  const earlyTotal = plannedTotal(cases, opts);
 
-  if (opts.list || !opts.run) {
-    printPlan(cases, opts);
-    if (opts.run === false) process.exit(0);
+  if (opts.list) {
+    listCases(cases);
+    process.exit(0);
   }
-  // --full-site depends on the site's size, so it's checked after the clone.
-  if (!opts.fullSite && earlyTotal > opts.maxSpend + 1e-9) {
-    console.error(`Refusing to start: the plan is about ${money(earlyTotal)}, over --max-spend ${money(opts.maxSpend)}. Pick fewer cases or raise --max-spend.`);
-    process.exit(2);
-  }
+
   const needsRealKey = cases.some((c) => c.keyMode === "real");
-  if (needsRealKey && !process.env.OPENROUTER_API_KEY) {
+  if (opts.run && needsRealKey && !process.env.OPENROUTER_API_KEY) {
     console.error("Paid cases are selected but OPENROUTER_API_KEY isn't set. Set it in the environment (never on the command line), or run --cases free.");
     process.exit(2);
   }
@@ -478,15 +476,15 @@ async function main() {
   const logger = createLogger(path.join(reportDir, "run.log"));
   const started = new Date();
 
-  logger.step(`axc-og-cards end-to-end run started`);
+  logger.step(opts.run ? "axc-og-cards end-to-end run started" : "axc-og-cards end-to-end plan (nothing will be run)");
   logger.info(`work folder: ${workdir}`);
   logger.info(`driver: ${opts.driver}; cases: ${cases.map((c) => c.id).join(", ")}`);
   logger.info(`options: ${JSON.stringify({ ...opts, workdir: undefined })}`);
 
-  const env = {};
   const sh = async (cmd, args, cwd) => (await runProcess(cmd, args, { cwd, env: process.env, logger })).stdout.trim();
 
-  // Clone once; every case then gets its own copy.
+  // Clone once; every case then gets its own copy. Cloning costs nothing, and
+  // the plan needs the real site, so it happens before anything else.
   logger.step("Cloning the site");
   const baseSite = path.join(workdir, "base-site");
   rmSync(baseSite, { recursive: true, force: true });
@@ -509,16 +507,26 @@ async function main() {
     YAML: require("yaml"),
   };
 
-  // The authoritative cost gate: the site's real post count and its own
-  // per-image estimate, checked before any case runs or anything is spent.
+  // Size the cost from the site itself: its post count, and the per-image
+  // estimate from the config the cases will actually use (the site's own
+  // og-cards.config.json, or the skill's template when it has none).
   const siteConfigFile = path.join(baseSite, "og-cards.config.json");
-  const siteConfig = existsSync(siteConfigFile)
-    ? JSON.parse(readFileSync(siteConfigFile, "utf8"))
-    : JSON.parse(readFileSync(path.join(SKILL_DIR, "templates/og-cards.config.json"), "utf8"));
+  const siteConfig = JSON.parse(readFileSync(existsSync(siteConfigFile) ? siteConfigFile : path.join(SKILL_DIR, "templates/og-cards.config.json"), "utf8"));
+  if (typeof siteConfig.estimatedCostPerImage !== "number" || !(siteConfig.estimatedCostPerImage > 0)) {
+    logger.error("Can't size the cost: the config has no positive numeric estimatedCostPerImage. Nothing was run or spent.");
+    process.exit(2);
+  }
   const siteSources = await deps.loadPosts(path.join(baseSite, siteConfig.postsDir), siteConfig.slugStrategy ?? "date-prefixed");
-  const site = { eligible: siteSources.filter((p) => !p.image).length, estimate: siteConfig.estimatedCostPerImage ?? FALLBACK_ESTIMATE };
+  const site = { eligible: siteSources.filter((p) => !p.image).length, estimate: siteConfig.estimatedCostPerImage };
   const totalPlanned = plannedTotal(cases, opts, site);
   logger.info(`site: ${siteSources.length} posts, ${site.eligible} without an image: override; estimated cost per image ${money(site.estimate)}`);
+
+  if (!opts.run) {
+    printPlan(cases, opts, site, opts.repo);
+    if (!opts.workdir) rmSync(workdir, { recursive: true, force: true });
+    process.exit(0);
+  }
+
   logger.info(`planned OpenRouter spend: about ${money(totalPlanned)} (limit ${money(opts.maxSpend)})`);
   if (totalPlanned > opts.maxSpend + 1e-9) {
     logger.error(`Refusing to run: the plan is about ${money(totalPlanned)}, over --max-spend ${money(opts.maxSpend)}. Pick fewer cases or raise --max-spend. Nothing was run or spent.`);

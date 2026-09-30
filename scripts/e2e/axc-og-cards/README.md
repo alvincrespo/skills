@@ -18,7 +18,7 @@ without an `image:` override, and its newest post must already have a card and a
 saved illustration.
 
 ```bash
-# show the plan and its cost; runs nothing
+# clone the site, print the plan and its cost, run nothing (the clone is deleted)
 node scripts/e2e/axc-og-cards/run.mjs
 
 # run the free cases (nothing can spend: they get a dummy API key)
@@ -74,9 +74,11 @@ dependencies first: `npm install --prefix axc-og-cards`.
 
 The backfill cases run on a clone trimmed to the newest 3 or 4 posts (in the
 case folder only), so "backfill everything" costs cents. `--site-size N` changes
-the size; `--full-site` backfills every eligible post instead. The cost gate counts
-the site's real posts and uses its own `estimatedCostPerImage`, after cloning and
-before anything runs, so raise `--max-spend` if the site is large.
+the size; `--full-site` backfills every eligible post instead. The cost is sized from the
+cloned site (its real post count and its own `estimatedCostPerImage`), never from
+a default, so even the plan clones first. Cloning is read-only and free. The run
+is refused before any case starts if the plan is over `--max-spend`, so raise it if
+the site is large. `--list` shows the cases without cloning or costs.
 
 Add a case by adding an object to `cases.mjs`; the fields are documented at the
 top of that file.
