@@ -4,3 +4,4 @@ __pycache__/
 *.egg-info/
 .claude/worktrees/
 dist/
+node_modules/
