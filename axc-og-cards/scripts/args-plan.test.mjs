@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { parseArgs } from "./lib/args.mjs";
-import { canAfford, affordableCalls, describeLimit, selectJobs, buildStatus } from "./lib/plan.mjs";
+import { canAfford, fitCalls, describeLimit, selectJobs, buildStatus, resolveModel, trialPaths, modelFolderName } from "./lib/plan.mjs";
 
 // --- args ---------------------------------------------------------------
 
@@ -97,12 +97,21 @@ test("--budget limits the run in every mode, including yolo", () => {
   }
 });
 
+const est = (n, price = 0.035) => Array(n).fill(price);
+
 test("when both limits apply the lower one wins", () => {
-  assert.equal(affordableCalls({ ...base, spentTotal: 4.9, runBudget: 1 }), 2); // total: $0.10 left
-  assert.equal(affordableCalls({ ...base, spentTotal: 0, runBudget: 0.1 }), 2); // run: $0.10
-  assert.equal(affordableCalls({ ...base, mode: "yolo" }), Infinity);
-  assert.equal(affordableCalls({ ...base, mode: "yolo", runBudget: 0.07 }), 2);
-  assert.equal(affordableCalls({ ...base, spentTotal: 6 }), 0);
+  assert.equal(fitCalls({ ...base, estimates: est(10), spentTotal: 4.9, runBudget: 1 }), 2); // total: $0.10 left
+  assert.equal(fitCalls({ ...base, estimates: est(10), spentTotal: 0, runBudget: 0.1 }), 2); // run: $0.10
+  assert.equal(fitCalls({ ...base, estimates: est(10), mode: "yolo" }), 10);
+  assert.equal(fitCalls({ ...base, estimates: est(10), mode: "yolo", runBudget: 0.07 }), 2);
+  assert.equal(fitCalls({ ...base, estimates: est(10), spentTotal: 6 }), 0);
+});
+
+test("fitCalls counts calls in order, each at its own model's price", () => {
+  // $0.10 run budget: 0.06 + 0.03 fit (0.09); the next 0.06 would pass it
+  assert.equal(fitCalls({ ...base, estimates: [0.06, 0.03, 0.06, 0.01], spentTotal: 0, runBudget: 0.1 }), 2);
+  // it stops at the first call that doesn't fit, even if a later cheaper one would
+  assert.equal(fitCalls({ ...base, estimates: [0.12, 0.01], spentTotal: 0, runBudget: 0.1 }), 0);
 });
 
 test("describeLimit names each limit that applies", () => {
@@ -209,7 +218,7 @@ test("a named path outside the posts folder, or not a post, is an error", () => 
 // --- status -------------------------------------------------------------
 
 test("status reports counts, the ledger and a next command, and warns when over budget", () => {
-  const config = { budget: 5, estimatedCostPerImage: 0.035 };
+  const config = { budget: 5, model: "m", pricing: { m: 0.035 } };
   const lines = buildStatus({ posts, hasCard: new Set(["mid"]), hasRaw: new Set(["new"]), spentTotal: 1.5, config });
   const text = lines.join("\n");
   assert.match(text, /Posts: 5 \(1 with a card, 4 without\)/);
@@ -222,13 +231,64 @@ test("status reports counts, the ledger and a next command, and warns when over 
 });
 
 test("status suggests a --limit that fits when the backfill wouldn't", () => {
-  const config = { budget: 5, estimatedCostPerImage: 0.035 };
+  const config = { budget: 5, model: "m", pricing: { m: 0.035 } };
   const text = buildStatus({ posts, hasCard: new Set(), hasRaw: new Set(), spentTotal: 4.93, config }).join("\n");
   assert.match(text, /--backfill --limit 2 /);
 });
 
 test("status with every card present has nothing to do", () => {
-  const config = { budget: 5, estimatedCostPerImage: 0.035 };
+  const config = { budget: 5, model: "m", pricing: { m: 0.035 } };
   const all = new Set(posts.map((p) => p.slug));
   assert.match(buildStatus({ posts, hasCard: all, hasRaw: all, spentTotal: 0, config }).join("\n"), /Nothing to do/);
+});
+
+// --- models and trials ---------------------------------------------------
+
+test("--model and --trial are parsed, and --trial only makes sense for named posts", () => {
+  const a = parseArgs(["a.md", "--model", "vendor/other", "--trial", "--spend", "auto"]);
+  assert.deepEqual([a.model, a.trial], ["vendor/other", true]);
+  assert.throws(() => parseArgs(["--backfill", "--trial"]), /named posts only/);
+  assert.throws(() => parseArgs(["a.md", "--trial", "--regen"]), /named posts only/);
+  assert.throws(() => parseArgs(["a.md", "--trial", "--render-only"]), /named posts only/);
+  assert.throws(() => parseArgs(["a.md", "--render-only", "--model", "x"]), /no effect with --render-only/);
+  assert.throws(() => parseArgs(["--model", "x"]), /needs a target/);
+  assert.throws(() => parseArgs(["a.md", "--model"]), /--model requires a value/);
+  assert.throws(() => parseArgs(["a.md", "--model", "--spend"]), /--model requires a value/);
+});
+
+test("a post's og_model beats --model, which beats the config's model", () => {
+  const config = { model: "from/config" };
+  assert.equal(resolveModel({ post: { model: null }, args: { model: null }, config }), "from/config");
+  assert.equal(resolveModel({ post: { model: null }, args: { model: "from/flag" }, config }), "from/flag");
+  assert.equal(resolveModel({ post: { model: "from/post" }, args: { model: "from/flag" }, config }), "from/post");
+});
+
+test("in a trial, --model beats a post's og_model so the model you name is the one tried", () => {
+  const config = { model: "from/config" };
+  assert.equal(resolveModel({ post: { model: "from/post" }, args: { model: "from/flag", trial: true }, config }), "from/flag");
+  // without --model a trial still honours the post's own model
+  assert.equal(resolveModel({ post: { model: "from/post" }, args: { model: null, trial: true }, config }), "from/post");
+});
+
+test("different model ids never share a trial folder", () => {
+  const ids = ["vendor/x", "vendor_x", "vendor%2Fx", "vendor x", "vendor:x", "a/b/c", "a_b_c", "..", ".", "model.v2", "ünï"];
+  const names = ids.map(modelFolderName);
+  assert.equal(new Set(names).size, ids.length, names.join(" | "));
+  for (const n of names) assert.ok(!/[\\/]/.test(n) && !/^\.+$/.test(n), n);
+  assert.equal(modelFolderName("black-forest-labs/flux.2-pro"), "black-forest-labs%2Fflux.2-pro");
+});
+
+test("a trial always generates, ignoring existing cards and illustrations", () => {
+  const r = select({ paths: ["_posts/mid.md"], trial: true }, { card: ["mid"], raw: ["mid"] });
+  assert.deepEqual(r.jobs.map((j) => [j.post.slug, j.needsCall]), [["mid", true]]);
+  assert.deepEqual(r.notes, []);
+  // an image: override is still skipped unless asked for
+  assert.deepEqual(select({ paths: ["_posts/custom-image.md"], trial: true }).jobs, []);
+});
+
+test("trial output goes under the saved-illustrations folder, one folder per model", () => {
+  const t = trialPaths({ rawDir: "/site/raw", model: "black-forest-labs/flux.2-pro", slug: "a-post" });
+  assert.equal(t.folder, "/site/raw/trial/black-forest-labs%2Fflux.2-pro");
+  assert.equal(t.illustration, "/site/raw/trial/black-forest-labs%2Fflux.2-pro/a-post.illustration.png");
+  assert.equal(t.card, "/site/raw/trial/black-forest-labs%2Fflux.2-pro/a-post.png");
 });

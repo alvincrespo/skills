@@ -9,7 +9,7 @@ import { syncManifest } from "./manifest.mjs";
 import { loadFonts, findFontProblems } from "./fonts.mjs";
 import { renderCard } from "./card.mjs";
 import { generateIllustration } from "./illustration.mjs";
-import { canAfford, affordableCalls, describeLimit, selectJobs, buildStatus } from "./plan.mjs";
+import { canAfford, fitCalls, describeLimit, selectJobs, buildStatus, resolveModel, trialPaths } from "./plan.mjs";
 
 async function loadCategories(file) {
   const byKey = new Map();
@@ -72,7 +72,6 @@ export async function run(argv, ctx = {}) {
     const cardsDir = abs(config.cardsDir);
     const rawDir = abs(config.rawDir);
     const ledgerFile = abs(config.ledger);
-    const estimate = config.estimatedCostPerImage;
 
     const [posts, categories, ledger] = await Promise.all([
       loadPosts(postsDir, config.slugStrategy),
@@ -93,21 +92,35 @@ export async function run(argv, ctx = {}) {
       return 0;
     }
 
-    sync = () =>
-      syncManifest({ posts, cardsDir, manifestPath: abs(config.manifest.path), format: config.manifest.format });
+    // A trial leaves the real cards, illustrations and manifest alone.
+    sync = args.trial
+      ? async () => {}
+      : () => syncManifest({ posts, cardsDir, manifestPath: abs(config.manifest.path), format: config.manifest.format });
 
     // Create the folders just before the first write (never for a status run or
     // a dry run). A ledger write that fails after a paid call would lose the
     // record of that spend, so they all exist before any call is made.
     const prepareFolders = async () => {
+      await mkdir(path.dirname(ledgerFile), { recursive: true });
+      if (args.trial) {
+        for (const job of jobs) await mkdir(trialPaths({ rawDir, model: job.model, slug: job.post.slug }).folder, { recursive: true });
+        return;
+      }
       await mkdir(cardsDir, { recursive: true });
       await mkdir(rawDir, { recursive: true });
-      await mkdir(path.dirname(ledgerFile), { recursive: true });
       await mkdir(path.dirname(abs(config.manifest.path)), { recursive: true });
     };
 
-    const { jobs, notes } = selectJobs({ posts, args, postsDir, cwd, hasCard, hasRaw });
+    const { jobs: selected, notes } = selectJobs({ posts, args, postsDir, cwd, hasCard, hasRaw });
     for (const note of notes) out(note);
+
+    // Each job uses its own model (the post's og_model, then --model, then the
+    // config's), and each model has its own price. A model with no price gets
+    // estimate: null, which stops the run below rather than guessing.
+    const jobs = selected.map((job) => {
+      const model = resolveModel({ post: job.post, args, config });
+      return { ...job, model, estimate: Object.hasOwn(config.pricing, model) ? config.pricing[model] : null };
+    });
 
     if (jobs.length === 0) {
       out("Nothing to do: no cards to generate.");
@@ -125,10 +138,19 @@ export async function run(argv, ctx = {}) {
     if (args.renderOnly) {
       out(`Render only: rebuilding ${jobs.length} card(s) from saved illustrations (no API calls, no cost).`);
     } else {
-      const fit = affordableCalls({ estimate, ...limits });
-      out(`Model: ${config.model} (~$${estimate}/image estimated)`);
+      const fit = fitCalls({ estimates: callsNeeded.map((j) => j.estimate ?? 0), ...limits });
+      const perModel = new Map();
+      for (const j of callsNeeded) perModel.set(j.model, { count: (perModel.get(j.model)?.count ?? 0) + 1, estimate: j.estimate });
+      const price = (e) => (e === null ? "no price in pricing" : `~$${e}/image estimated`);
+      if (perModel.size <= 1) {
+        const [model, info] = perModel.size === 1 ? [...perModel][0] : [config.model, { estimate: config.pricing[config.model] }];
+        out(`Model: ${model} (${price(info.estimate)})`);
+      } else {
+        out(`Models: ${[...perModel].map(([m, i]) => `${m} x${i.count} (${price(i.estimate)})`).join(", ")}`);
+      }
+      if (args.trial) out(`Trial: output goes to ${path.relative(root, path.join(rawDir, "trial"))}/<model>/; the real cards, illustrations and manifest are left alone.`);
       out(`Planned cards: ${jobs.length} (${callsNeeded.length} need a paid illustration)`);
-      out(`Estimated cost of this run: $${(callsNeeded.length * estimate).toFixed(4)}`);
+      out(`Estimated cost of this run: $${callsNeeded.reduce((n, j) => n + (j.estimate ?? 0), 0).toFixed(4)}`);
       out(`Limit: ${describeLimit(limits)}`);
       if (callsNeeded.length > fit) {
         out(`Only ${fit} of ${callsNeeded.length} paid illustrations fit under that limit; the run will stop after ${fit}.`);
@@ -140,6 +162,9 @@ export async function run(argv, ctx = {}) {
     // refused straight afterwards.
     const problems = [];
     if (!args.renderOnly && callsNeeded.length > 0) {
+      for (const model of new Set(callsNeeded.filter((j) => j.estimate === null).map((j) => j.model))) {
+        problems.push(`Model "${model}" has no entry in "pricing" in ${path.basename(args.config)}, so its cost can't be estimated or limited. Add its estimated dollars per image there, or use a different model.`);
+      }
       if (mode !== "yolo" && spentTotal > config.budget + 1e-9) {
         problems.push(`Spending is $${spentTotal.toFixed(4)}, over the $${config.budget.toFixed(2)} budget (an earlier --spend yolo run went past it). Raise "budget" in ${path.basename(args.config)} to keep spending.`);
       }
@@ -162,9 +187,10 @@ export async function run(argv, ctx = {}) {
     await prepareFolders();
     let spentThisRun = 0;
 
-    for (const { post, needsCall } of jobs) {
-      const rawPath = path.join(rawDir, `${post.slug}.png`);
-      const cardPath = path.join(cardsDir, `${post.slug}.png`);
+    for (const { post, needsCall, model, estimate } of jobs) {
+      const trial = args.trial ? trialPaths({ rawDir, model, slug: post.slug }) : null;
+      const rawPath = trial ? trial.illustration : path.join(rawDir, `${post.slug}.png`);
+      const cardPath = trial ? trial.card : path.join(cardsDir, `${post.slug}.png`);
 
       if (needsCall) {
         spentTotal = ledgerTotal(ledger, ledgerFile);
@@ -184,8 +210,9 @@ export async function run(argv, ctx = {}) {
           result = await generateIllustration({
             post,
             apiKey: env.OPENROUTER_API_KEY,
-            model: config.model,
+            model,
             stylePrompt: config.stylePrompt,
+            params: config.modelParams?.[model] ?? {},
             fetchImpl,
           });
         } catch (err) {
@@ -194,7 +221,7 @@ export async function run(argv, ctx = {}) {
         }
         // Record the spend before anything else touches the disk: if saving
         // the image fails after a billed call, the ledger must still know.
-        ledger.push({ slug: post.slug, model: config.model, cost: result.cost, timestamp: new Date().toISOString() });
+        ledger.push({ slug: post.slug, model, cost: result.cost, timestamp: new Date().toISOString() });
         await saveLedger(ledgerFile, ledger);
         await writeFile(rawPath, result.buffer);
 
@@ -226,6 +253,7 @@ export async function run(argv, ctx = {}) {
     }
 
     await sync();
+    if (args.trial) out(`\nTrial output is in ${path.relative(root, path.join(rawDir, "trial"))}. Nothing in the real cards, illustrations or manifest was touched.`);
 
     const finalTotal = ledgerTotal(ledger, ledgerFile);
     out(`\nDone. Ledger total: $${finalTotal.toFixed(4)} of $${config.budget.toFixed(2)}.`);

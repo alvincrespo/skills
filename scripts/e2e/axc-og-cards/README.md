@@ -64,6 +64,9 @@ dependencies first: `npm install --prefix axc-og-cards`.
 | `status` | | No arguments: read-only report |
 | `existing-card-skipped` | | A post with a card is skipped and pointed at `--regen` |
 | `regen` | yes | `--regen` pays for a new illustration and replaces the card |
+| `trial` | yes | `--trial` pays for an illustration into the trial folder only; the real card, illustration and manifest are untouched |
+| `model-unpriced` | | `--model` with no price in `pricing` is refused before any call |
+| `og-model-unpriced` | | A post's `og_model` beats the config's model, so an unpriced one is refused |
 | `render-only` | | Rebuilds a deleted card from the saved illustration for free, identical to the original |
 | `over-budget-refused` | | Ledger already over budget: `--spend auto` refuses |
 | `yolo-over-budget` | yes | `--spend yolo` proceeds, records the call, warns the total is over |
@@ -75,7 +78,7 @@ dependencies first: `npm install --prefix axc-og-cards`.
 The backfill cases run on a clone trimmed to the newest 3 or 4 posts (in the
 case folder only), so "backfill everything" costs cents. `--site-size N` changes
 the size; `--full-site` backfills every eligible post instead. The cost is sized from the
-cloned site (its real post count and its own `estimatedCostPerImage`), never from
+cloned site (its real post count and the `pricing` entry for its default `model`), never from
 a default, so even the plan clones first. Cloning is read-only and free. The run
 is refused before any case starts if the plan is over `--max-spend`, so raise it if
 the site is large. `--list` shows the cases without cloning or costs.

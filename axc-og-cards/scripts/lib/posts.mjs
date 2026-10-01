@@ -50,6 +50,7 @@ export function splitFrontMatter(raw) {
     description: scalarValue(fields.description),
     image: scalarValue(fields.image),
     slug: scalarValue(fields.slug),
+    og_model: scalarValue(fields.og_model),
   };
   return { data, content: match[2] };
 }
@@ -92,6 +93,7 @@ export async function loadPosts(postsDir, slugStrategy) {
       category: data.category ? String(data.category) : null,
       date: parseDate(data.date),
       image: data.image ? String(data.image) : null, // explicit front-matter override
+      model: data.og_model ? String(data.og_model) : null, // per-post model override
     });
   }
   return posts.sort((a, b) => a.slug.localeCompare(b.slug));

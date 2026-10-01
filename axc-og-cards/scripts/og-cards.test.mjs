@@ -132,6 +132,29 @@ test("config validation names the first problem", () => {
   bad((c) => (c.fonts.sources = []), /fonts\.sources/);
 });
 
+test("pricing and modelParams are validated", () => {
+  const bad = (mutate, pattern) => {
+    const c = clone(template);
+    mutate(c);
+    assert.throws(() => validateConfig(c), pattern);
+  };
+  bad((c) => delete c.pricing, /pricing must be an object/);
+  bad((c) => (c.pricing = { [c.model]: 0 }), /must be a positive number/);
+  bad((c) => (c.pricing = { "other/model": 0.01 }), /no entry for the default model/);
+  bad((c) => (c.estimatedCostPerImage = 0.035), /replaced by "pricing"/);
+  bad((c) => (c.modelParams = [1]), /modelParams must be an object/);
+  bad((c) => (c.modelParams = { [c.model]: "seed=1" }), /modelParams\["[^"]+"\] must be an object/);
+  const ok = clone(template);
+  ok.pricing["vendor/other"] = 0.02;
+  ok.modelParams = { "vendor/other": { seed: 1 } };
+  assert.doesNotThrow(() => validateConfig(ok));
+});
+
+test("og_model is read from front matter", () => {
+  assert.equal(splitFrontMatter("---\ntitle: T\nog_model: vendor/m\n---\n").data.og_model, "vendor/m");
+  assert.equal(splitFrontMatter("---\ntitle: T\n---\n").data.og_model, null);
+});
+
 test("config validation rejects WOFF2 font sources", () => {
   const c = clone(template);
   c.fonts.sources[0].path = "fonts/x.woff2";

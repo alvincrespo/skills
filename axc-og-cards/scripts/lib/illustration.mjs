@@ -1,5 +1,5 @@
 // Requests one square illustration from OpenRouter's image API.
-export async function generateIllustration({ post, apiKey, model, stylePrompt, fetchImpl = fetch }) {
+export async function generateIllustration({ post, apiKey, model, stylePrompt, params = {}, fetchImpl = fetch }) {
   const subject = [post.title, post.description].filter(Boolean).join(". ").slice(0, 400);
   const prompt = `${subject}\n\nStyle: ${stylePrompt}`;
 
@@ -9,11 +9,14 @@ export async function generateIllustration({ post, apiKey, model, stylePrompt, f
       Authorization: `Bearer ${apiKey}`,
       "Content-Type": "application/json",
     },
+    // Model-specific options override the defaults, but never the model or
+    // the prompt.
     body: JSON.stringify({
-      model,
-      prompt,
       aspect_ratio: "1:1",
       output_format: "png",
+      ...params,
+      model,
+      prompt,
     }),
   });
 

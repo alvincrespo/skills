@@ -103,16 +103,37 @@ It skips a post, with a note, when:
 |---|---|
 | `--regen` | Replace the illustration and card for the named posts |
 | `--render-only` | Rebuild cards from the saved illustrations. **Costs nothing**; use after a font, color or byline change |
-| `--model <id>` | Use this model for this run |
-| `--trial` | Write to a scratch folder instead of `rawDir`/`cardsDir`, to compare models. Spend is still recorded |
+| `--model <id>` | Use this model for this run (not with `--render-only`, which makes no calls). A post's own `og_model` still wins, except in a `--trial`, where `--model` wins so you get the model you named |
+| `--trial` | Try a model on the named posts without touching the real cards: always makes a fresh illustration and card into `<rawDir>/trial/<model>/` (kept out of the built site, like `rawDir`). Spend is still recorded in the ledger and limited like any run. Named posts only: not with `--backfill`, `--regen` or `--render-only` |
 | `--include-overridden` | Also generate cards for posts with an `image:` in their front matter |
 | `--limit N` | Backfill only: at most N new illustrations |
 | `--since DATE` / `--before DATE` | Backfill only: limit by post date (`YYYY-MM-DD`, compared in UTC; `--since` is inclusive, `--before` exclusive) |
 
-### Model precedence
+### Models and pricing
 A post's `og_model` front matter wins, then `--model`, then the config's
-`model`. Every model used needs a `pricing` entry in the config. The
-script refuses a model it has no estimate for rather than guessing.
+`model`. In the config:
+
+```json
+"model": "black-forest-labs/flux.2-pro",
+"pricing": { "black-forest-labs/flux.2-pro": 0.035, "vendor/cheaper-model": 0.014 },
+"modelParams": { "vendor/cheaper-model": { "seed": 1 } }
+```
+
+- `pricing` is the estimated dollars per image for each model you use. It
+  only drives the budget checks and the estimate; the ledger records what
+  OpenRouter actually charged. A model with no entry is **refused**
+  (the dry run says so and exits 1), because its cost can't be limited.
+  Never invent a price for the user: ask them, or have them check the
+  model's page on OpenRouter.
+- `modelParams` (optional) holds request options for a model, merged
+  into the API request over the defaults (`aspect_ratio: "1:1"`,
+  `output_format: "png"`). It can't change the model or the prompt.
+- Each paid call is checked against the budget at its own model's price.
+
+To compare models, use `--trial --model <id>` on one or two posts, then
+look at the results in `<rawDir>/trial/<model>/` (the `.png` is the
+finished card, the `.illustration.png` is the model's raw output). Add the
+winner to `pricing` and set it as `model`, or put `og_model:` on a post.
 
 ## Spending: `--spend` and `--budget`
 
