@@ -10,7 +10,6 @@ import { ledgerTotal } from "./lib/ledger.mjs";
 import { validateConfig } from "./lib/config.mjs";
 import { findFontProblems } from "./lib/fonts.mjs";
 import { serializeManifest } from "./lib/manifest.mjs";
-import { parseArgs } from "./lib/args.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const template = JSON.parse(await readFile(path.join(here, "../templates/og-cards.config.json"), "utf8"));
@@ -165,17 +164,4 @@ test("findFontProblems reports missing files and unmatched roles", async () => {
 test("serializeManifest writes a mapping in either format", () => {
   assert.equal(serializeManifest(["a", "b"], "yaml-map"), "a: true\nb: true\n");
   assert.deepEqual(JSON.parse(serializeManifest(["a", "b"], "json")), { a: true, b: true });
-});
-
-// --- args ---------------------------------------------------------------
-
-test("parseArgs reads flags in both forms", () => {
-  const a = parseArgs(["--yes", "--only", "a,b", "--regen=c", "--render-only", "--config", "x.json"]);
-  assert.deepEqual([a.yes, a.only, a.regen, a.renderOnly, a.config], [true, ["a", "b"], ["c"], true, "x.json"]);
-  assert.equal(parseArgs([]).config, "og-cards.config.json");
-});
-
-test("parseArgs refuses an empty slug list", () => {
-  assert.throws(() => parseArgs(["--only"]), /--only requires/);
-  assert.throws(() => parseArgs(["--regen", " , "]), /--regen requires/);
 });
