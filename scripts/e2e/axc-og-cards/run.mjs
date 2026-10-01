@@ -125,7 +125,7 @@ function listCases(cases) {
 function printPlan(cases, opts, site, siteLabel) {
   const total = plannedTotal(cases, opts, site);
   console.log(`\nPlan (${opts.driver} driver) for ${siteLabel}: ${cases.length} case(s)`);
-  console.log(`The site has ${site.eligible} post(s) without an image: override; estimated cost per image ${money(site.estimate)}.\n`);
+  console.log(`The site has ${site.eligible} post(s) without an image: override; estimated cost per image for the default model ${money(site.estimate)}.\n`);
   for (const c of cases) {
     const calls = plannedCalls(c, opts, site);
     console.log(`  ${c.paid ? "PAID" : "free"}  ${c.id.padEnd(28)} ${calls ? `up to ~${money(calls * site.estimate)} (${calls} image${calls > 1 ? "s" : ""})` : "$0"}`);
@@ -283,7 +283,7 @@ async function runCase(def, env) {
     cpSync(SKILL_DIR, skillDest, { recursive: true, filter: (p) => opts.freshInstall ? path.basename(p) !== "node_modules" : true });
 
     // 6. case-specific breakage
-    const ctxBase = { caseDir, log, config };
+    const ctxBase = { caseDir, log, config, target };
     if (def.mutate) { log.info("Setup 6/7: apply this case's deliberate breakage"); def.mutate(ctxBase); } else log.info("Setup 6/7: no case-specific changes");
 
     // 7. snapshot
@@ -360,7 +360,9 @@ async function runCase(def, env) {
       unexpectedChanges: (mode) => {
         const slugs = mode === "target" ? [target.slug] : mode === "site" ? site.map((p) => p.slug) : [];
         const allowed = new Set(slugs.flatMap((s) => [cardRel(s), rawRel(s)]));
-        return changedFiles().filter((f) => !allowed.has(f));
+        // a trial may write under <rawDir>/trial/ and nowhere else
+        const trialPrefix = mode === "trial" ? path.join(config.rawDir, "trial") + path.sep : null;
+        return changedFiles().filter((f) => !allowed.has(f) && !(trialPrefix && f.startsWith(trialPrefix)));
       },
     };
     const r = makeChecks();
@@ -512,14 +514,15 @@ async function main() {
   // og-cards.config.json, or the skill's template when it has none).
   const siteConfigFile = path.join(baseSite, "og-cards.config.json");
   const siteConfig = JSON.parse(readFileSync(existsSync(siteConfigFile) ? siteConfigFile : path.join(SKILL_DIR, "templates/og-cards.config.json"), "utf8"));
-  if (typeof siteConfig.estimatedCostPerImage !== "number" || !(siteConfig.estimatedCostPerImage > 0)) {
-    logger.error("Can't size the cost: the config has no positive numeric estimatedCostPerImage. Nothing was run or spent.");
+  const modelPrice = siteConfig.pricing?.[siteConfig.model];
+  if (typeof modelPrice !== "number" || !(modelPrice > 0)) {
+    logger.error(`Can't size the cost: the config's pricing has no positive number for its model "${siteConfig.model}". Nothing was run or spent.`);
     process.exit(2);
   }
   const siteSources = await deps.loadPosts(path.join(baseSite, siteConfig.postsDir), siteConfig.slugStrategy ?? "date-prefixed");
-  const site = { eligible: siteSources.filter((p) => !p.image).length, estimate: siteConfig.estimatedCostPerImage };
+  const site = { eligible: siteSources.filter((p) => !p.image).length, estimate: modelPrice };
   const totalPlanned = plannedTotal(cases, opts, site);
-  logger.info(`site: ${siteSources.length} posts, ${site.eligible} without an image: override; estimated cost per image ${money(site.estimate)}`);
+  logger.info(`site: ${siteSources.length} posts, ${site.eligible} without an image: override; estimated cost per image for the default model ${money(site.estimate)}`);
 
   if (!opts.run) {
     printPlan(cases, opts, site, opts.repo);

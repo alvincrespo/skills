@@ -17,12 +17,13 @@
 //   args          what the user types after /axc-og-cards; {post} = the target post
 //   suffix        extra instruction appended to the agent's prompt
 //   scriptExit    expected exit code when driven by the script directly
-//   changes       "target" | "site" | "none": whose cards/illustrations may change
+//   changes       "target" | "site" | "trial" | "none": whose cards/illustrations may change
+//                 ("trial" = only files under <rawDir>/trial/)
 //   validate(ctx, r)
 //
 // Free cases get a dummy API key, so a bug can never spend real money there.
 
-import { rmSync, existsSync } from "node:fs";
+import { rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 const NON_INTERACTIVE =
@@ -220,6 +221,33 @@ export const CASES = [
   },
   {
     ...base,
+    id: "trial",
+    title: "--trial tries a model without touching the real cards",
+    description: "The post keeps its card and illustration; --trial pays for a fresh illustration into the trial folder only, records the spend, and leaves the real files and manifest alone.",
+    paid: true, expectCalls: 1, spendMode: "auto", clean: "none", keyMode: "real", changes: "trial",
+    args: ["{post}", "--trial", "--spend", "auto"], scriptExit: 0,
+    async validate(ctx, r) {
+      const [entry] = ctx.newEntries;
+      r.ok("exactly one new ledger entry", ctx.newEntries.length === 1, `${ctx.newEntries.length} new`);
+      r.ok("entry is for the target post and the configured model", entry?.slug === ctx.target.slug && entry?.model === ctx.config.model, `${entry?.slug} / ${entry?.model}`);
+      r.ok("entry cost is a number between 0 and $0.10", typeof entry?.cost === "number" && entry.cost > 0 && entry.cost <= 0.1, entry?.cost);
+      const folder = path.join(ctx.caseDir, ctx.config.rawDir, "trial", ctx.config.model.replace(/[^A-Za-z0-9._-]+/g, "_"));
+      const illustration = path.join(folder, `${ctx.target.slug}.illustration.png`);
+      const card = path.join(folder, `${ctx.target.slug}.png`);
+      r.ok("the trial illustration was saved in the trial folder", ctx.exists(illustration), path.relative(ctx.caseDir, illustration));
+      try {
+        const meta = await ctx.sharp(card).metadata();
+        r.ok("the trial card is a 1200x630 PNG", meta.format === "png" && meta.width === 1200 && meta.height === 630, `${meta.format} ${meta.width}x${meta.height}`);
+      } catch (err) {
+        r.fail("the trial card is a 1200x630 PNG", err.message);
+      }
+      r.ok("the real card is unchanged", ctx.unchanged(ctx.cardRel(ctx.target.slug)));
+      r.ok("the real saved illustration is unchanged", ctx.unchanged(ctx.rawRel(ctx.target.slug)));
+      r.warn("output says where the trial output went", /trial/i.test(ctx.text));
+    },
+  },
+  {
+    ...base,
     id: "render-only",
     title: "--render-only rebuilds a card for free",
     description: "The card is deleted but the illustration is kept; --render-only recreates the card with no spend and no API key.",
@@ -232,6 +260,35 @@ export const CASES = [
       r.ok("card is a 1200x630 PNG", card.ok, card.detail);
       r.ok("manifest lists the post", ctx.manifest[ctx.target.slug] === true);
       r.warn("the rebuilt card is identical to the one that was deleted", ctx.originalCardSha !== undefined && ctx.originalCardSha === ctx.currentSha(ctx.cardRel(ctx.target.slug)), "a difference can also come from a newer sharp/resvg; compare the two images by eye");
+    },
+  },
+  {
+    ...base,
+    id: "model-unpriced",
+    title: "A model with no price is refused",
+    description: "--model names a model that isn't in the config's pricing table; the run must be refused before any call.",
+    spendMode: "auto", args: ["{post}", "--model", "e2e/unpriced-model", "--spend", "auto"], scriptExit: 1,
+    validate(ctx, r) {
+      expectNothingSpent(ctx, r);
+      expectNoAssets(ctx, r, ctx.target.slug);
+      r.ok("output says the model has no entry in pricing", /e2e\/unpriced-model/.test(ctx.text) && /no entry in "pricing"/.test(ctx.text));
+    },
+  },
+  {
+    ...base,
+    id: "og-model-unpriced",
+    title: "A post's og_model is honoured, and must be priced",
+    description: "The post's front matter sets og_model to a model that isn't priced. It must win over the config's (priced) model, so the run is refused.",
+    spendMode: "auto", args: ["{post}", "--spend", "auto"], scriptExit: 1,
+    mutate(ctx) {
+      const text = readFileSync(ctx.target.file, "utf8");
+      writeFileSync(ctx.target.file, text.replace(/^---\n/, "---\nog_model: e2e/unpriced-model\n"));
+      ctx.log.info(`  added og_model: e2e/unpriced-model to ${path.basename(ctx.target.file)}`);
+    },
+    validate(ctx, r) {
+      expectNothingSpent(ctx, r);
+      expectNoAssets(ctx, r, ctx.target.slug);
+      r.ok("output refuses the post's own model", /e2e\/unpriced-model/.test(ctx.text) && /no entry in "pricing"/.test(ctx.text));
     },
   },
   {

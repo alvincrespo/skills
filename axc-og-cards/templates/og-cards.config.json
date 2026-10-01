@@ -9,7 +9,9 @@
 
   "budget": 5.0,
   "model": "black-forest-labs/flux.2-pro",
-  "estimatedCostPerImage": 0.035,
+  "pricing": {
+    "black-forest-labs/flux.2-pro": 0.035
+  },
   "stylePrompt": "Flat minimal editorial illustration, thin off-black line work, a single green accent (#15803d), plenty of white space, white background, no text, no letters, no logos, no people's faces.",
 
   "brand": {

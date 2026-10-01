@@ -13,13 +13,30 @@ export function canAfford({ estimate, spentTotal, spentThisRun, mode, totalBudge
   return { ok: true };
 }
 
-// How many paid calls fit under the limits before the run starts (Infinity if
-// nothing limits it).
-export function affordableCalls({ estimate, spentTotal, mode, totalBudget, runBudget }) {
-  let n = Infinity;
-  if (mode !== "yolo") n = Math.min(n, Math.floor((totalBudget - spentTotal) / estimate + EPS));
-  if (runBudget != null) n = Math.min(n, Math.floor(runBudget / estimate + EPS));
-  return Math.max(0, n);
+// How many of these paid calls, in order, fit under the limits before the run
+// starts. Each call has its own estimate because each can use a different model.
+export function fitCalls({ estimates, spentTotal, mode, totalBudget, runBudget }) {
+  let spentThisRun = 0;
+  let n = 0;
+  for (const estimate of estimates) {
+    if (!canAfford({ estimate, spentTotal: spentTotal + spentThisRun, spentThisRun, mode, totalBudget, runBudget }).ok) break;
+    spentThisRun += estimate;
+    n++;
+  }
+  return n;
+}
+
+// The model for a post: its own og_model front matter, then --model, then the
+// config's default.
+export function resolveModel({ post, args, config }) {
+  return post.model ?? args.model ?? config.model;
+}
+
+// Where a --trial run writes: inside the saved-illustrations folder, which is
+// already kept out of the built site, in one folder per model.
+export function trialPaths({ rawDir, model, slug }) {
+  const folder = path.join(rawDir, "trial", model.replace(/[^A-Za-z0-9._-]+/g, "_"));
+  return { folder, illustration: path.join(folder, `${slug}.illustration.png`), card: path.join(folder, `${slug}.png`) };
 }
 
 export function describeLimit({ mode, totalBudget, spentTotal, runBudget }) {
@@ -67,6 +84,10 @@ export function selectJobs({ posts, args, postsDir, cwd, hasCard, hasRaw }) {
         else notes.push(`Skipping "${post.slug}": no saved illustration to render from.`);
       } else if (post.image && !args.includeOverridden) {
         notes.push(`Skipping "${post.slug}": its front matter sets image: ${post.image} (use --include-overridden to generate a card anyway).`);
+      } else if (args.trial) {
+        // A trial ignores what exists: it always makes a fresh illustration,
+        // into its own folder.
+        jobs.push({ post, needsCall: true });
       } else if (hasCard.has(post.slug) && !args.regen) {
         notes.push(`Skipping "${post.slug}": it already has a card (use --regen to replace it).`);
       } else {
@@ -126,7 +147,7 @@ export function buildStatus({ posts, hasCard, hasRaw, spentTotal, config }) {
   const eligible = missing.filter((p) => !p.image);
   const free = eligible.filter((p) => hasRaw.has(p.slug)).length;
   const paid = eligible.length - free;
-  const est = config.estimatedCostPerImage;
+  const est = config.pricing[config.model];
   const remaining = config.budget - spentTotal;
 
   const lines = [
@@ -150,7 +171,7 @@ export function buildStatus({ posts, hasCard, hasRaw, spentTotal, config }) {
   }
   lines.push(`Backfilling all of them would cost about $${(paid * est).toFixed(2)} (${paid} x $${est}).`);
   lines.push("Next:");
-  const fit = affordableCalls({ estimate: est, spentTotal, mode: "strict", totalBudget: config.budget });
+  const fit = fitCalls({ estimates: Array(paid).fill(est), spentTotal, mode: "strict", totalBudget: config.budget });
   if (paid > 0 && fit < paid) {
     lines.push(fit > 0
       ? `  /axc-og-cards --backfill --limit ${fit}    (all ${paid} would go past the budget)`

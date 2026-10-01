@@ -16,13 +16,13 @@ import { run } from "./lib/run.mjs";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const template = JSON.parse(await readFile(path.join(here, "../templates/og-cards.config.json"), "utf8"));
 
-async function makeProject({ ledger = [], budget = 5, posts = ["alpha"], cards = [] } = {}) {
+async function makeProject({ ledger = [], budget = 5, posts = ["alpha"], cards = [], frontMatter = {}, pricing = null, modelParams = null } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), "og-run-"));
   await mkdir(path.join(dir, "posts"));
   await mkdir(path.join(dir, "fonts"));
   await mkdir(path.join(dir, "cards"));
   for (const slug of posts) {
-    await writeFile(path.join(dir, "posts", `${slug}.md`), `---\ntitle: ${slug}\ndate: 2024-05-01T10:00:00Z\n---\nBody`);
+    await writeFile(path.join(dir, "posts", `${slug}.md`), `---\ntitle: ${slug}\ndate: 2024-05-01T10:00:00Z\n${frontMatter[slug] ?? ""}\n---\nBody`);
   }
   for (const slug of cards) await writeFile(path.join(dir, "cards", `${slug}.png`), "card");
   for (const src of template.fonts.sources) await writeFile(path.join(dir, "fonts", path.basename(src.path)), "not a real font");
@@ -35,6 +35,8 @@ async function makeProject({ ledger = [], budget = 5, posts = ["alpha"], cards =
     rawDir: "raw",
     ledger: "ledger.json",
     budget,
+    ...(pricing ? { pricing } : {}),
+    ...(modelParams ? { modelParams } : {}),
     manifest: { path: "og_cards.yml", format: "yaml-map" },
     fonts: { ...template.fonts, sources: template.fonts.sources.map((s) => ({ ...s, path: `fonts/${path.basename(s.path)}` })) },
   };
@@ -250,4 +252,90 @@ test("a dry run that would go ahead still exits 0, and needs no key when nothing
   assert.match(ok.text(), /Dry run only/);
   const free = harness(await makeProject({ cards: ["alpha"] }), image({ cost: 0.03 }), {});
   assert.equal(await run(["posts/alpha.md"], free.ctx), 0); // already has a card: nothing to pay for
+});
+
+// --- models, pricing, params and trials ----------------------------------------
+
+const PRICES = { [template.model]: 0.035, "vendor/cheap": 0.014, "vendor/pricey": 0.06 };
+const bodyOf = (h, i = 0) => JSON.parse(h.calls[i][1].body);
+
+test("a model with no price is refused, in a dry run and a real run, before any call", async () => {
+  for (const args of [["posts/alpha.md", "--model", "vendor/unpriced"], ["posts/alpha.md", "--model", "vendor/unpriced", "--spend", "auto"]]) {
+    const h = harness(await makeProject());
+    assert.equal(await run(args, h.ctx), 1, args.join(" "));
+    assert.match(h.errText(), /Model "vendor\/unpriced" has no entry in "pricing"/);
+    assert.equal(h.calls.length, 0);
+  }
+});
+
+test("a post's og_model is used (and priced) ahead of --model and the config's model", async () => {
+  const dir = await makeProject({ pricing: PRICES, frontMatter: { alpha: "og_model: vendor/pricey" } });
+  const h = harness(dir);
+  await run(["posts/alpha.md", "--model", "vendor/cheap", "--spend", "auto"], h.ctx);
+  assert.equal(bodyOf(h).model, "vendor/pricey");
+  const [entry] = await ledgerOf(dir);
+  assert.deepEqual([entry.slug, entry.model], ["alpha", "vendor/pricey"]);
+});
+
+test("--model beats the config's model, and is recorded in the ledger", async () => {
+  const dir = await makeProject({ pricing: PRICES });
+  const h = harness(dir);
+  await run(["posts/alpha.md", "--model", "vendor/cheap", "--spend", "auto"], h.ctx);
+  assert.equal(bodyOf(h).model, "vendor/cheap");
+  assert.equal((await ledgerOf(dir))[0].model, "vendor/cheap");
+});
+
+test("the dry run counts what fits using each post's own model price", async () => {
+  // alpha uses the $0.035 model and beta the $0.06 one: with a $0.07 run budget
+  // only alpha fits ($0.095 together)
+  const dir = await makeProject({ pricing: PRICES, posts: ["alpha", "beta"], frontMatter: { beta: "og_model: vendor/pricey" } });
+  const h = harness(dir);
+  assert.equal(await run(["posts/alpha.md", "posts/beta.md", "--budget", "0.07"], h.ctx), 0);
+  assert.match(h.text(), /Only 1 of 2 paid illustrations fit under that limit/);
+  assert.match(h.text(), /Estimated cost of this run: \$0\.0950/);
+});
+
+test("the dry run lists each model and its estimate", async () => {
+  const dir = await makeProject({ pricing: PRICES, posts: ["alpha", "beta"], frontMatter: { beta: "og_model: vendor/cheap" } });
+  const h = harness(dir);
+  assert.equal(await run(["posts/alpha.md", "posts/beta.md"], h.ctx), 0);
+  assert.match(h.text(), /Models: .*flux\.2-pro x1 \(~\$0\.035.*vendor\/cheap x1 \(~\$0\.014/);
+  assert.match(h.text(), /Estimated cost of this run: \$0\.0490/);
+});
+
+test("modelParams for the model are merged into the request, but can't replace the model or prompt", async () => {
+  const dir = await makeProject({ modelParams: { [template.model]: { seed: 7, output_format: "jpeg", model: "evil/model", prompt: "evil" }, "other/model": { seed: 1 } } });
+  const h = harness(dir);
+  await run(["posts/alpha.md", "--spend", "auto"], h.ctx);
+  const body = bodyOf(h);
+  assert.equal(body.seed, 7);
+  assert.equal(body.output_format, "jpeg"); // overrides the default
+  assert.equal(body.aspect_ratio, "1:1"); // default kept
+  assert.equal(body.model, template.model);
+  assert.match(body.prompt, /^alpha/);
+});
+
+test("a trial records the spend but writes only under the trial folder", async () => {
+  const dir = await makeProject({ cards: ["alpha"] });
+  await mkdir(path.join(dir, "raw"), { recursive: true });
+  await writeFile(path.join(dir, "raw", "alpha.png"), "the real illustration");
+  const h = harness(dir);
+  // the dummy font makes the card render fail after the call, which is fine here
+  assert.equal(await run(["posts/alpha.md", "--trial", "--spend", "auto"], h.ctx), 1);
+  assert.equal(h.calls.length, 1);
+  const [entry] = await ledgerOf(dir);
+  assert.deepEqual([entry.slug, entry.model, entry.cost], ["alpha", template.model, 0.03]);
+  const trialFolder = path.join(dir, "raw", "trial", template.model.replace(/[^A-Za-z0-9._-]+/g, "_"));
+  assert.equal(existsSync(path.join(trialFolder, "alpha.illustration.png")), true);
+  assert.equal(await readFile(path.join(dir, "raw", "alpha.png"), "utf8"), "the real illustration");
+  assert.equal(await readFile(path.join(dir, "cards", "alpha.png"), "utf8"), "card");
+  assert.equal(existsSync(path.join(dir, "og_cards.yml")), false);
+});
+
+test("a trial still respects the budget and records nothing it didn't spend", async () => {
+  const dir = await makeProject({ cards: ["alpha"] });
+  const h = harness(dir);
+  assert.equal(await run(["posts/alpha.md", "--trial", "--spend", "auto", "--budget", "0.01"], h.ctx), 1);
+  assert.equal(h.calls.length, 0);
+  assert.deepEqual(await ledgerOf(dir), []);
 });

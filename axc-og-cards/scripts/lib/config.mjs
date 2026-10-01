@@ -26,7 +26,25 @@ export function validateConfig(config) {
 
   for (const key of ["postsDir", "cardsDir", "rawDir", "ledger", "model", "stylePrompt"]) requireString(config, key);
   requirePositiveNumber(config, "budget");
-  requirePositiveNumber(config, "estimatedCostPerImage");
+
+  if ("estimatedCostPerImage" in config) {
+    fail('"estimatedCostPerImage" was replaced by "pricing", a table of estimated dollars per image by model, e.g. "pricing": { "black-forest-labs/flux.2-pro": 0.035 }');
+  }
+  if (typeof config.pricing !== "object" || config.pricing === null || Array.isArray(config.pricing)) {
+    fail('pricing must be an object of model id -> estimated dollars per image');
+  }
+  for (const [model, price] of Object.entries(config.pricing)) {
+    if (typeof price !== "number" || !Number.isFinite(price) || price <= 0) fail(`pricing["${model}"] must be a positive number`);
+  }
+  if (!Object.hasOwn(config.pricing, config.model)) {
+    fail(`pricing has no entry for the default model "${config.model}"; add its estimated cost per image`);
+  }
+  if (config.modelParams != null) {
+    if (typeof config.modelParams !== "object" || Array.isArray(config.modelParams)) fail("modelParams must be an object of model id -> request options");
+    for (const [model, params] of Object.entries(config.modelParams)) {
+      if (typeof params !== "object" || params === null || Array.isArray(params)) fail(`modelParams["${model}"] must be an object`);
+    }
+  }
 
   if (config.categoriesFile != null) requireString(config, "categoriesFile");
 

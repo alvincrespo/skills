@@ -34,6 +34,8 @@ export function parseArgs(argv) {
     regen: false,
     renderOnly: false,
     includeOverridden: false,
+    trial: false,
+    model: null,
     spend: null,
     budget: null,
   };
@@ -65,6 +67,8 @@ export function parseArgs(argv) {
       case "--regen": args.regen = true; break;
       case "--render-only": args.renderOnly = true; break;
       case "--include-overridden": args.includeOverridden = true; break;
+      case "--trial": args.trial = true; break;
+      case "--model": args.model = value(); break;
       case "--config": args.config = value(); break;
       case "--spend": {
         const mode = value();
@@ -96,13 +100,19 @@ export function parseArgs(argv) {
     throw new Error("Pass post paths or --backfill, not both.");
   }
   if (!hasTarget) {
-    const stray = ["--spend", "--budget", "--regen", "--render-only", "--limit", "--since", "--before", "--include-overridden"].filter((f) => given.has(f));
+    const stray = ["--spend", "--budget", "--regen", "--render-only", "--limit", "--since", "--before", "--include-overridden", "--trial", "--model"].filter((f) => given.has(f));
     if (stray.length > 0) {
       throw new Error(`${stray.join(", ")} needs a target: pass one or more post paths, or --backfill. With no target the command only reports status.`);
     }
   }
   if (args.regen && args.backfill) {
     throw new Error("--regen replaces existing illustrations, so it only works with named post paths, not --backfill.");
+  }
+  if (args.trial && (args.backfill || args.regen || args.renderOnly)) {
+    throw new Error("--trial tries a model on the named posts only: it can't be combined with --backfill, --regen or --render-only.");
+  }
+  if (args.renderOnly && args.model) {
+    throw new Error("--model has no effect with --render-only, which makes no API calls.");
   }
   if (!args.backfill) {
     const stray = ["--limit", "--since", "--before"].filter((f) => given.has(f));
