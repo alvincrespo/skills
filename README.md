@@ -19,8 +19,13 @@ initialize the repo, set up labels, and bootstrap the board itself.
 - [github-project-bootstrap](./github-project-bootstrap/SKILL.md) — turn a
   JSON plan into a milestone, a linked Project (v2) board, and every
   epic/story issue. User-invoked only.
+- [axc-og-cards](./axc-og-cards/SKILL.md) — generate a unique Open Graph
+  card for each blog post. The text is rendered from your own fonts; only
+  the illustration comes from a paid OpenRouter image model, with spend
+  limited by a budget and recorded in a ledger. For Bridgetown sites; needs
+  Node 20.9+ and an `OPENROUTER_API_KEY`. User-invoked only.
 
-Chained together: describe a project, review the generated plan, then
+The first four chain together: describe a project, review the generated plan, then
 create the repo, apply labels, and bootstrap the issues. See
 [PROJECT_PLAN.md](./PROJECT_PLAN.md) for the design. A skill is listed
 here only once it's finished.
@@ -40,11 +45,12 @@ Or install the skills with the `skills` CLI:
 npx skills add alvincrespo/skills --agent claude-code
 ```
 
-Install all four together. They reuse each other's code rather than
-duplicating it: `github-project-bootstrap` runs `github-labels-setup`'s
+The four GitHub-workflow skills should be installed together. They reuse
+each other's code rather than duplicating it: `github-project-bootstrap` runs `github-labels-setup`'s
 script, and `project-epic-planner` validates plans with
 `github-project-bootstrap`'s loader. Each expects the other to be
-installed next to it.
+installed next to it. `axc-og-cards` stands alone and can be installed on
+its own.
 
 ### Standalone `.skill` files
 
@@ -52,7 +58,9 @@ Only `github-labels-setup` is available as a standalone `.skill` file,
 because it's the only skill that works on its own. The two GitHub skills
 also can't be packaged: they set `disable-model-invocation` so Claude
 never creates repos or issues unprompted, and the `.skill` format has no
-equivalent. To build it:
+equivalent. `axc-og-cards` can't be packaged either, for the same reason (it
+spends money) and because it needs its npm dependencies. To build the one
+that can be:
 
 ```bash
 scripts/package-standalone-skills.sh   # writes dist/github-labels-setup.skill

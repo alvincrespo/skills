@@ -44,6 +44,19 @@ jobs:
           github-project-bootstrap/scripts/test_bootstrap_github_project.py
           github-labels-setup/scripts/test_ensure_labels.py
 
+      # axc-og-cards is Node: sharp needs 20.9+, and CI uses the current LTS.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: axc-og-cards/package-lock.json
+
+      - name: Install axc-og-cards dependencies
+        run: npm ci --prefix axc-og-cards
+
+      - name: axc-og-cards unit tests
+        run: npm test --prefix axc-og-cards
+
       # Pinned so a change upstream can't silently change what gets packaged.
       - name: Fetch skill-creator
         uses: actions/checkout@v4
