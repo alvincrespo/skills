@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { parseArgs } from "./lib/args.mjs";
-import { canAfford, fitCalls, describeLimit, selectJobs, buildStatus, resolveModel, trialPaths } from "./lib/plan.mjs";
+import { canAfford, fitCalls, describeLimit, selectJobs, buildStatus, resolveModel, trialPaths, modelFolderName } from "./lib/plan.mjs";
 
 // --- args ---------------------------------------------------------------
 
@@ -263,6 +263,21 @@ test("a post's og_model beats --model, which beats the config's model", () => {
   assert.equal(resolveModel({ post: { model: "from/post" }, args: { model: "from/flag" }, config }), "from/post");
 });
 
+test("in a trial, --model beats a post's og_model so the model you name is the one tried", () => {
+  const config = { model: "from/config" };
+  assert.equal(resolveModel({ post: { model: "from/post" }, args: { model: "from/flag", trial: true }, config }), "from/flag");
+  // without --model a trial still honours the post's own model
+  assert.equal(resolveModel({ post: { model: "from/post" }, args: { model: null, trial: true }, config }), "from/post");
+});
+
+test("different model ids never share a trial folder", () => {
+  const ids = ["vendor/x", "vendor_x", "vendor%2Fx", "vendor x", "vendor:x", "a/b/c", "a_b_c", "..", ".", "model.v2", "ünï"];
+  const names = ids.map(modelFolderName);
+  assert.equal(new Set(names).size, ids.length, names.join(" | "));
+  for (const n of names) assert.ok(!/[\\/]/.test(n) && !/^\.+$/.test(n), n);
+  assert.equal(modelFolderName("black-forest-labs/flux.2-pro"), "black-forest-labs%2Fflux.2-pro");
+});
+
 test("a trial always generates, ignoring existing cards and illustrations", () => {
   const r = select({ paths: ["_posts/mid.md"], trial: true }, { card: ["mid"], raw: ["mid"] });
   assert.deepEqual(r.jobs.map((j) => [j.post.slug, j.needsCall]), [["mid", true]]);
@@ -273,7 +288,7 @@ test("a trial always generates, ignoring existing cards and illustrations", () =
 
 test("trial output goes under the saved-illustrations folder, one folder per model", () => {
   const t = trialPaths({ rawDir: "/site/raw", model: "black-forest-labs/flux.2-pro", slug: "a-post" });
-  assert.equal(t.folder, "/site/raw/trial/black-forest-labs_flux.2-pro");
-  assert.equal(t.illustration, "/site/raw/trial/black-forest-labs_flux.2-pro/a-post.illustration.png");
-  assert.equal(t.card, "/site/raw/trial/black-forest-labs_flux.2-pro/a-post.png");
+  assert.equal(t.folder, "/site/raw/trial/black-forest-labs%2Fflux.2-pro");
+  assert.equal(t.illustration, "/site/raw/trial/black-forest-labs%2Fflux.2-pro/a-post.illustration.png");
+  assert.equal(t.card, "/site/raw/trial/black-forest-labs%2Fflux.2-pro/a-post.png");
 });

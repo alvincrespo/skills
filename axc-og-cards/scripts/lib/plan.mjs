@@ -27,15 +27,26 @@ export function fitCalls({ estimates, spentTotal, mode, totalBudget, runBudget }
 }
 
 // The model for a post: its own og_model front matter, then --model, then the
-// config's default.
+// config's default. A trial is the exception: it exists to try the model you
+// name, so --model beats a post's og_model there.
 export function resolveModel({ post, args, config }) {
+  if (args.trial && args.model) return args.model;
   return post.model ?? args.model ?? config.model;
+}
+
+// A folder name for a model id. Percent-encoding keeps it readable and, unlike
+// replacing odd characters with "_", gives different ids different names
+// ("vendor/x" and "vendor_x" must not share a folder). A name made only of
+// dots would be a path, so those are encoded too.
+export function modelFolderName(model) {
+  const name = encodeURIComponent(model).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  return /^\.+$/.test(name) ? name.replace(/\./g, "%2E") : name;
 }
 
 // Where a --trial run writes: inside the saved-illustrations folder, which is
 // already kept out of the built site, in one folder per model.
 export function trialPaths({ rawDir, model, slug }) {
-  const folder = path.join(rawDir, "trial", model.replace(/[^A-Za-z0-9._-]+/g, "_"));
+  const folder = path.join(rawDir, "trial", modelFolderName(model));
   return { folder, illustration: path.join(folder, `${slug}.illustration.png`), card: path.join(folder, `${slug}.png`) };
 }
 

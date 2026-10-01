@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { run } from "./lib/run.mjs";
+import { modelFolderName } from "./lib/plan.mjs";
 
 // These drive run() with a fake fetch and dummy font files, so no test touches
 // the network or spends anything. The dummy fonts are enough to reach every
@@ -325,7 +326,7 @@ test("a trial records the spend but writes only under the trial folder", async (
   assert.equal(h.calls.length, 1);
   const [entry] = await ledgerOf(dir);
   assert.deepEqual([entry.slug, entry.model, entry.cost], ["alpha", template.model, 0.03]);
-  const trialFolder = path.join(dir, "raw", "trial", template.model.replace(/[^A-Za-z0-9._-]+/g, "_"));
+  const trialFolder = path.join(dir, "raw", "trial", modelFolderName(template.model));
   assert.equal(existsSync(path.join(trialFolder, "alpha.illustration.png")), true);
   assert.equal(await readFile(path.join(dir, "raw", "alpha.png"), "utf8"), "the real illustration");
   assert.equal(await readFile(path.join(dir, "cards", "alpha.png"), "utf8"), "card");
@@ -338,4 +339,13 @@ test("a trial still respects the budget and records nothing it didn't spend", as
   assert.equal(await run(["posts/alpha.md", "--trial", "--spend", "auto", "--budget", "0.01"], h.ctx), 1);
   assert.equal(h.calls.length, 0);
   assert.deepEqual(await ledgerOf(dir), []);
+});
+
+test("--trial --model tries that model even when the post pins another", async () => {
+  const dir = await makeProject({ pricing: PRICES, frontMatter: { alpha: "og_model: vendor/pricey" } });
+  const h = harness(dir);
+  await run(["posts/alpha.md", "--trial", "--model", "vendor/cheap", "--spend", "auto"], h.ctx);
+  assert.equal(bodyOf(h).model, "vendor/cheap");
+  assert.equal((await ledgerOf(dir))[0].model, "vendor/cheap");
+  assert.equal(existsSync(path.join(dir, "raw", "trial", modelFolderName("vendor/cheap"), "alpha.illustration.png")), true);
 });

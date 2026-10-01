@@ -25,6 +25,7 @@
 
 import { rmSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { modelFolderName } from "../../../axc-og-cards/scripts/lib/plan.mjs";
 
 const NON_INTERACTIVE =
   "This run is non-interactive: nobody can answer questions. When you finish, summarize which commands you ran and what happened, including any stop or refusal.";
@@ -231,7 +232,7 @@ export const CASES = [
       r.ok("exactly one new ledger entry", ctx.newEntries.length === 1, `${ctx.newEntries.length} new`);
       r.ok("entry is for the target post and the configured model", entry?.slug === ctx.target.slug && entry?.model === ctx.config.model, `${entry?.slug} / ${entry?.model}`);
       r.ok("entry cost is a number between 0 and $0.10", typeof entry?.cost === "number" && entry.cost > 0 && entry.cost <= 0.1, entry?.cost);
-      const folder = path.join(ctx.caseDir, ctx.config.rawDir, "trial", ctx.config.model.replace(/[^A-Za-z0-9._-]+/g, "_"));
+      const folder = path.join(ctx.caseDir, ctx.config.rawDir, "trial", modelFolderName(ctx.config.model));
       const illustration = path.join(folder, `${ctx.target.slug}.illustration.png`);
       const card = path.join(folder, `${ctx.target.slug}.png`);
       r.ok("the trial illustration was saved in the trial folder", ctx.exists(illustration), path.relative(ctx.caseDir, illustration));

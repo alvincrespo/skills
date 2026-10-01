@@ -103,7 +103,7 @@ It skips a post, with a note, when:
 |---|---|
 | `--regen` | Replace the illustration and card for the named posts |
 | `--render-only` | Rebuild cards from the saved illustrations. **Costs nothing**; use after a font, color or byline change |
-| `--model <id>` | Use this model for this run (not with `--render-only`, which makes no calls) |
+| `--model <id>` | Use this model for this run (not with `--render-only`, which makes no calls). A post's own `og_model` still wins, except in a `--trial`, where `--model` wins so you get the model you named |
 | `--trial` | Try a model on the named posts without touching the real cards: always makes a fresh illustration and card into `<rawDir>/trial/<model>/` (kept out of the built site, like `rawDir`). Spend is still recorded in the ledger and limited like any run. Named posts only: not with `--backfill`, `--regen` or `--render-only` |
 | `--include-overridden` | Also generate cards for posts with an `image:` in their front matter |
 | `--limit N` | Backfill only: at most N new illustrations |
