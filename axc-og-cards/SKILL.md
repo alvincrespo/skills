@@ -1,16 +1,11 @@
 ---
 name: axc-og-cards
 description: Generate a unique 1200×630 Open Graph card for a blog post (or backfill every post missing one). Code renders all the text with the site's own fonts; only the right-hand illustration comes from a paid OpenRouter image model, with spend recorded in a ledger and checked against a budget. Use only when the user explicitly runs /axc-og-cards or directly asks to generate, regenerate or backfill social/OG cards — never inferred from conversation. Every run can spend real money.
-argument-hint: "[<post.md>…] | --backfill [--limit N] [--since DATE] [--before DATE] [--spend strict|auto|yolo] [--budget AMOUNT]"
+argument-hint: "[<post.md>…] | --backfill [--limit N] [--since DATE] [--before DATE] [--regen] [--render-only] [--trial] [--model ID] [--include-overridden] [--spend strict|auto|yolo] [--budget AMOUNT]"
 disable-model-invocation: true
 ---
 
 # axc-og-cards
-
-> **DRAFT: design only (#64).** `scripts/og-cards.mjs` hasn't been
-> ported yet. This file describes how the skill will behave, as decided in
-> `docs/adr/0003-axc-og-cards-node-and-cost-controls.md`. Don't list the
-> skill in the README or `plugin.json` until it's built and verified.
 
 Generate a 1200×630 Open Graph card for each post. The card has:
 - the category and date in the top left;
@@ -25,6 +20,10 @@ costs money.
 
 Per ADR 0002 and 0003, this skill is `disable-model-invocation: true`:
 every run can spend money, so it only runs when a person explicitly asks.
+
+Needs Node 20.9 or newer (for sharp) and an OpenRouter API key. The
+framework wiring in this skill is documented for Bridgetown only; see
+`references/bridgetown.md`.
 
 ## What the consuming repo owns
 

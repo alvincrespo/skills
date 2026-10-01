@@ -9,7 +9,7 @@
     {
       "name": "alvincrespo-skills",
       "source": "./",
-      "description": "Claude Skills for real engineering workflows: turn a project idea into a fully tracked, live GitHub Project board."
+      "description": "Claude Skills for real engineering workflows: turn a project idea into a fully tracked GitHub Project board, and generate Open Graph cards for blog posts."
     }
   ]
 }

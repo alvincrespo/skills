@@ -1,7 +1,8 @@
 # ADR 0003: `axc-og-cards` — a Node skill with script-enforced spend controls
 
 ## Status
-Proposed (tracked in #64)
+Accepted. Built across parts A–D of #64; the end-to-end harness in
+`scripts/e2e/axc-og-cards/` exercises the behavior described here.
 
 ## Context
 `alvincrespo/website` generates a unique 1200×630 Open Graph card per blog

@@ -3,14 +3,17 @@
 # using skill-creator's package_skill.py. Output goes to dist/ (gitignored).
 #
 # Only skills that are fully self-contained AND safe to model-invoke are
-# packaged. Everything else ships only via the plugin, where all four
-# skills are installed side by side:
+# packaged. Everything else ships only via the plugin (or the skills CLI),
+# where the GitHub-workflow skills are installed side by side:
 #   - project-epic-planner reuses github-project-bootstrap's plan loader
 #     and github-labels-setup's default labels (ADR 0001: no duplication).
 #   - github-project-bootstrap shells out to github-labels-setup's script.
 #   - github-repo-init and github-project-bootstrap set
 #     disable-model-invocation (ADR 0002), which package_skill.py's
 #     validator rejects, and which a .skill install wouldn't enforce anyway.
+#   - axc-og-cards sets disable-model-invocation too (every run can spend
+#     money, ADR 0003) and needs its npm dependencies, which a .skill
+#     doesn't install.
 # Add a skill to STANDALONE only if none of that applies to it.
 #
 # Usage:
