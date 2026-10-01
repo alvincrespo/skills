@@ -6,7 +6,7 @@ import { loadConfig } from "./config.mjs";
 import { loadPosts } from "./posts.mjs";
 import { exists, loadLedger, saveLedger, ledgerTotal } from "./ledger.mjs";
 import { syncManifest } from "./manifest.mjs";
-import { loadFonts } from "./fonts.mjs";
+import { loadFonts, findFontProblems } from "./fonts.mjs";
 import { renderCard } from "./card.mjs";
 import { generateIllustration } from "./illustration.mjs";
 import { canAfford, affordableCalls, describeLimit, selectJobs, buildStatus } from "./plan.mjs";
@@ -133,22 +133,29 @@ export async function run(argv, ctx = {}) {
       if (callsNeeded.length > fit) {
         out(`Only ${fit} of ${callsNeeded.length} paid illustrations fit under that limit; the run will stop after ${fit}.`);
       }
+    }
 
-      if (!args.spend) {
-        out("\nDry run only. Re-run with --spend strict, auto or yolo to proceed.");
-        return 0;
+    // Everything that would stop the real run before it makes a call. A dry run
+    // reports these too, so an approval is never asked for a run that would be
+    // refused straight afterwards.
+    const problems = [];
+    if (!args.renderOnly && callsNeeded.length > 0) {
+      if (mode !== "yolo" && spentTotal > config.budget + 1e-9) {
+        problems.push(`Spending is $${spentTotal.toFixed(4)}, over the $${config.budget.toFixed(2)} budget (an earlier --spend yolo run went past it). Raise "budget" in ${path.basename(args.config)} to keep spending.`);
       }
+      if (!env.OPENROUTER_API_KEY) problems.push("OPENROUTER_API_KEY is not set; cannot generate new illustrations.");
+    }
+    problems.push(...(await findFontProblems(config.fonts, root)));
 
-      if (callsNeeded.length > 0) {
-        if (mode !== "yolo" && spentTotal > config.budget + 1e-9) {
-          errOut(`\nSpending is $${spentTotal.toFixed(4)}, over the $${config.budget.toFixed(2)} budget (an earlier --spend yolo run went past it). Raise "budget" in ${path.basename(args.config)} to keep spending.`);
-          return 1;
-        }
-        if (!env.OPENROUTER_API_KEY) {
-          errOut("OPENROUTER_API_KEY is not set; cannot generate new illustrations.");
-          return 1;
-        }
-      }
+    const dryRun = !args.renderOnly && !args.spend;
+    if (problems.length > 0) {
+      for (const problem of problems) errOut(`\n${problem}`);
+      if (dryRun) errOut("\nDry run: this run would be refused until the above is fixed, so there is nothing to approve yet.");
+      return 1;
+    }
+    if (dryRun) {
+      out("\nDry run only. Re-run with --spend strict, auto or yolo to proceed.");
+      return 0;
     }
 
     const fontData = await loadFonts(config.fonts, root);

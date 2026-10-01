@@ -220,3 +220,34 @@ test("a named post that already has a card is skipped and nothing is spent", asy
   assert.match(h.text(), /already has a card \(use --regen/);
   assert.equal(h.calls.length, 0);
 });
+
+test("a dry run reports what would make the real run refuse, and exits 1", async () => {
+  const noKey = harness(await makeProject(), image({ cost: 0.03 }), {});
+  assert.equal(await run(["posts/alpha.md"], noKey.ctx), 1);
+  assert.match(noKey.errText(), /OPENROUTER_API_KEY is not set/);
+  assert.match(noKey.errText(), /nothing to approve yet/);
+  assert.doesNotMatch(noKey.text(), /Dry run only/);
+
+  const over = await makeProject({ ledger: [{ slug: "x", cost: 5.5, timestamp: "t" }] });
+  const overH = harness(over);
+  assert.equal(await run(["posts/alpha.md"], overH.ctx), 1);
+  assert.match(overH.errText(), /over the \$5\.00 budget.*Raise "budget"/s);
+
+  const noFont = await makeProject();
+  await writeFile(path.join(noFont, "og-cards.config.json"), JSON.stringify({
+    ...JSON.parse(await readFile(path.join(noFont, "og-cards.config.json"), "utf8")),
+    fonts: { ...template.fonts, sources: [{ family: "Geist", weight: 700, path: "fonts/gone.ttf" }, ...template.fonts.sources.slice(1).map((s) => ({ ...s, path: `fonts/${path.basename(s.path)}` }))] },
+  }));
+  const fontH = harness(noFont);
+  assert.equal(await run(["posts/alpha.md"], fontH.ctx), 1);
+  assert.match(fontH.errText(), /Font file not found: fonts\/gone\.ttf/);
+  for (const h of [noKey, overH, fontH]) assert.equal(h.calls.length, 0);
+});
+
+test("a dry run that would go ahead still exits 0, and needs no key when nothing is paid for", async () => {
+  const ok = harness(await makeProject());
+  assert.equal(await run(["posts/alpha.md"], ok.ctx), 0);
+  assert.match(ok.text(), /Dry run only/);
+  const free = harness(await makeProject({ cards: ["alpha"] }), image({ cost: 0.03 }), {});
+  assert.equal(await run(["posts/alpha.md"], free.ctx), 0); // already has a card: nothing to pay for
+});

@@ -12,7 +12,8 @@
 //   --render-only           rebuild every card that has a saved illustration; costs nothing
 //   --include-overridden    also cover posts whose front matter sets image:
 //   --limit N               backfill only: at most N new illustrations
-//   --since D / --before D  backfill only: by post date (YYYY-MM-DD)
+//   --since D / --before D  backfill only: by post date (YYYY-MM-DD, UTC; --since is
+//                           inclusive, --before exclusive)
 //   --config path           default og-cards.config.json
 //
 // Spending:

@@ -107,7 +107,7 @@ It skips a post, with a note, when:
 | `--trial` | Write to a scratch folder instead of `rawDir`/`cardsDir`, to compare models. Spend is still recorded |
 | `--include-overridden` | Also generate cards for posts with an `image:` in their front matter |
 | `--limit N` | Backfill only: at most N new illustrations |
-| `--since DATE` / `--before DATE` | Backfill only: limit by post date (`YYYY-MM-DD`) |
+| `--since DATE` / `--before DATE` | Backfill only: limit by post date (`YYYY-MM-DD`, compared in UTC; `--since` is inclusive, `--before` exclusive) |
 
 ### Model precedence
 A post's `og_model` front matter wins, then `--model`, then the config's
@@ -136,6 +136,11 @@ script refuses a model it has no estimate for rather than guessing.
    `--spend`. It prints the planned cards, how many need a paid
    illustration, the estimated cost, the limit that applies and where it
    comes from (e.g. `Limit: $1.00 (--budget); $3.20 left of $5.00 total`).
+   The dry run also makes the checks the real run makes. If something
+   would stop it (the ledger is already over budget, `OPENROUTER_API_KEY`
+   isn't set, or a font file is missing), it prints what and exits 1. In
+   that case **report the problem and stop; don't ask for approval**, since
+   the real run would be refused straight away.
 2. **Show the plan and ask** (use AskUserQuestion). If the plan exceeds
    the limit, say how many posts will fit before it stops. For a large
    backfill, suggest a `--limit` that fits.
