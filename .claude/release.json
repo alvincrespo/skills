@@ -13,7 +13,7 @@
   "checks": {
     "lint": "shellcheck github-repo-init/scripts/setup_repo.sh scripts/*.sh",
     "build": "claude plugin validate . --strict && claude plugin validate .claude-plugin/plugin.json --strict",
-    "test": "python3 -m unittest project-epic-planner/scripts/test_render_plan.py github-project-bootstrap/scripts/test_bootstrap_github_project.py github-labels-setup/scripts/test_ensure_labels.py axc-dependabot-sweep/scripts/test_config.py axc-dependabot-sweep/scripts/test_list_prs.py axc-dependabot-sweep/scripts/test_wait_for_pr.py && npm ci --prefix axc-og-cards && npm test --prefix axc-og-cards",
+    "test": "python3 -m unittest project-epic-planner/scripts/test_render_plan.py github-project-bootstrap/scripts/test_bootstrap_github_project.py github-labels-setup/scripts/test_ensure_labels.py axc-dependabot-sweep/scripts/test_config.py axc-dependabot-sweep/scripts/test_list_prs.py axc-dependabot-sweep/scripts/test_wait_for_pr.py axc-dependabot-sweep/scripts/test_worktree.py && npm ci --prefix axc-og-cards && npm test --prefix axc-og-cards",
     "integrity": "gitleaks git --redact --no-banner . && scripts/package-standalone-skills.sh"
   },
   "release": {

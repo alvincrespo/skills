@@ -46,6 +46,7 @@ jobs:
           axc-dependabot-sweep/scripts/test_config.py
           axc-dependabot-sweep/scripts/test_list_prs.py
           axc-dependabot-sweep/scripts/test_wait_for_pr.py
+          axc-dependabot-sweep/scripts/test_worktree.py
 
       # axc-og-cards is Node: sharp needs 20.9+, and CI uses the current LTS.
       - uses: actions/setup-node@v4
