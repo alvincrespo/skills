@@ -1,9 +1,10 @@
 # CLAUDE.md — how this repo is maintained
 
-Skills live as flat top-level folders — no bucket subdirectories yet (see
-`docs/adr/0001-four-skills-not-one.md` and the "defer until there's an
-actual second reason" note in `PROJECT_PLAN.md`). Revisit this once a
-second, genuinely different domain of skill shows up — not preemptively.
+Skills live as flat top-level folders, with no bucket subdirectories.
+`docs/adr/0006-stay-flat-at-nine-skills.md` records why, lists every path
+that assumes the flat layout, and says when to revisit: more than 15
+skills in `plugin.json`, or two skills in different domains needing the
+same folder name.
 
 Every finished skill must have:
 - an entry in the top-level `README.md`, its name linked to its `SKILL.md`
