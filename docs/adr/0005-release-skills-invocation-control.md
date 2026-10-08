@@ -84,18 +84,32 @@ Rejected alternatives:
   but the most it can do without an explicit request is open a PR.
 - `axc-cut-release-tag` can't be reached through any other skill. The
   `/axc-cut-release-tag` command is the only way in.
-- #99 applies this table to the four SKILL.md files, and adds a test that
-  checks the frontmatter against it. If this table changes, that test has
-  to change too. #99 also rewrites the router's "Route" section: Phase 2
-  becomes "tell the user to run `/axc-cut-release-tag <V>`" instead of
-  "run the `axc-cut-release-tag` skill". The router's SKILL.md describes
-  the Phase 2 handoff in three places, and all three need changing: the
-  frontmatter `description` ("delegates to … `axc-cut-release-tag`"), the
-  intro's Phase 2 bullet, and "Route".
+- #99 applies this to the in-repo copies of the skills (`axc-cut-release*/`,
+  imported by #83), not the static copies in `~/.claude/skills`. After #86
+  those entries are symlinks into this repo, so the flag applies in every
+  project on this machine. That's intended, since the tag skill publishes
+  a release wherever it runs.
+- #99 sets the frontmatter from this table and adds a test,
+  `axc-cut-release/scripts/test_release_tool.py`'s
+  `test_frontmatter_matches_adr`, that checks it. If this table changes,
+  that test has to change too.
+- #99 also rewrites every place the skills describe the old Phase 2
+  handoff:
+  - `axc-cut-release/SKILL.md`: the frontmatter `description` ("delegates
+    to … `axc-cut-release-tag`"), the intro's Phase 2 bullet, and "Route"
+    (Phase 2 becomes "tell the user to run `/axc-cut-release-tag <V>`").
+  - `axc-cut-release-tag/SKILL.md`: the `description`'s "or invoked by
+    the `axc-cut-release` router for Phase 2". It's only reachable as
+    `/axc-cut-release-tag` now.
+  - `axc-cut-release-bump/SKILL.md`: the `description`'s "then runs
+    `/axc-cut-release` again to tag", and step 6's "run
+    `/axc-cut-release <V>` to tag and publish". Both should name
+    `/axc-cut-release-tag <V>` directly, since that's the command that
+    tags.
 - `.claude/CLAUDE.md`'s invocation paragraph gains this sentence, after
   the one about `axc-og-cards`:
 
   > `axc-cut-release-tag` sets it too, because pushing the tag publishes a
   > public release; the other three release skills don't, and the router
-  > hands Phase 2 back to you as `/axc-cut-release-tag <V>` instead of
-  > invoking it (`docs/adr/0005-release-skills-invocation-control.md`).
+  > hands Phase 2 back to the user as `/axc-cut-release-tag <V>` instead
+  > of invoking it (`docs/adr/0005-release-skills-invocation-control.md`).
