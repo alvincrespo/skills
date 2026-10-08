@@ -63,8 +63,12 @@ Buckets also don't fix a real problem yet:
      `.claude-plugin/plugin.json`).
   2. Two skills in different domains need the same folder name.
 - A move to buckets would mean updating every row of the table above, so
-  check it against the repo again first (`git grep -n
-  'parent.parent.parent\|\.\./[a-z-]*/\|REPO_ROOT' -- '*.py' '*.sh' '*.mjs' '*.md'`
-  is a starting point).
+  check it against the repo again first. This search finds every file in
+  the table (plus some unrelated matches), so it's a starting point:
+
+  ```bash
+  git grep -l -e 'parent.parent.parent\|\.\./[a-z-]*/\|REPO_ROOT\|"\./[a-z-]*"\|--prefix [a-z-]*\|[a-z-]*/scripts/[a-z_]*\.py' \
+    -- '*.py' '*.sh' '*.mjs' '*.md' '*.json' '*.yml'
+  ```
 - `.claude/CLAUDE.md` points to this ADR instead of carrying its own
   revisit rule.
