@@ -8,10 +8,10 @@
 # with zero skill folders present: it just no-ops.
 #
 # Existing symlinks are replaced, so re-running is safe. Anything else
-# already at a link's path (a real directory, such as a copy installed by
-# hand) is skipped and reported, and the script exits 1: `ln -sfn` would
-# otherwise put the link *inside* that directory rather than replacing it,
-# and the old copy would keep loading. Nothing is ever deleted.
+# already at a link's path is skipped and reported, and the script exits 1.
+# For a real directory (such as a copy installed by hand), `ln -sfn` would
+# put the link *inside* it, and the old copy would keep loading. For a
+# file, it would delete the file. Nothing is ever deleted.
 
 set -euo pipefail
 
@@ -33,7 +33,7 @@ for skill_md in "$REPO_ROOT"/*/SKILL.md; do
   for target in "${TARGETS[@]}"; do
     link="$target/$skill_name"
     if [ -e "$link" ] && [ ! -L "$link" ]; then
-      echo "skip $skill_name: $link is a real directory, not a link. Move it aside and re-run." >&2
+      echo "skip $skill_name: $link exists and isn't a symlink. Move it aside and re-run." >&2
       skipped=1
       continue
     fi

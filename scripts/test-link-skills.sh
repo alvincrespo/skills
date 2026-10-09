@@ -46,7 +46,7 @@ echo "hand-installed copy" > "$real_dir/marker.txt"
 
 run_link
 check "first run exits 1" [ "$status" -eq 1 ]
-check "prints the skip line" grep -q "^skip github-labels-setup: $real_dir is a real directory" <<<"$output"
+check "prints the skip line" grep -q "^skip github-labels-setup: $real_dir exists and isn't a symlink" <<<"$output"
 check "real directory is still a real directory" [ -d "$real_dir" ]
 check "real directory is not a link" [ ! -L "$real_dir" ]
 check "real directory holds only its original file" [ "$(ls -A "$real_dir")" = "marker.txt" ]
@@ -62,6 +62,17 @@ for skill_md in "$REPO_ROOT"/*/SKILL.md; do
 done
 check "github-labels-setup still linked in .agents/skills" \
   links_to "$HOME/.agents/skills/github-labels-setup" "$REPO_ROOT/github-labels-setup"
+
+# A stray file at a link's path is skipped too, never replaced (ln -sfn
+# would delete it).
+stray="$HOME/.agents/skills/project-epic-planner"
+rm "$stray"
+echo "stray file" > "$stray"
+run_link
+check "stray file: run exits 1" [ "$status" -eq 1 ]
+check "stray file: skip line names it" grep -q "^skip project-epic-planner: $stray exists and isn't a symlink" <<<"$output"
+check "stray file: left in place, unchanged" grep -qx "stray file" "$stray"
+rm "$stray"
 
 # With the directory moved aside, a second run links it and succeeds.
 rm -rf "$real_dir"

@@ -57,6 +57,9 @@ jobs:
       - name: axc-og-cards unit tests
         run: npm test --prefix axc-og-cards
 
+      - name: link-skills tests
+        run: scripts/test-link-skills.sh
+
       # Pinned so a change upstream can't silently change what gets packaged.
       - name: Fetch skill-creator
         uses: actions/checkout@v4
