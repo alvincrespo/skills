@@ -30,11 +30,14 @@ class VersionFile:
 
 
 def git(args: list[str], repo_root: Path) -> str:
-    result = subprocess.run(
-        ["git", "-C", str(repo_root), *args],
-        capture_output=True,
-        text=True,
-    )
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(repo_root), *args],
+            capture_output=True,
+            text=True,
+        )
+    except UnicodeDecodeError as exc:
+        raise ReleaseToolError(f"git {' '.join(args)} produced non-UTF-8 output: {exc}")
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip()
         raise ReleaseToolError(f"git {' '.join(args)} failed: {detail}")
@@ -50,17 +53,26 @@ def _require(config: dict, dotted: str):
     return node
 
 
+def _require_str(config: dict, dotted: str) -> str:
+    value = _require(config, dotted)
+    if not isinstance(value, str) or not value:
+        raise ReleaseToolError(f"config key '{dotted}' must be a non-empty string")
+    return value
+
+
 def load_config(path: Path) -> dict:
     try:
         config = json.loads(path.read_text())
     except FileNotFoundError:
         raise ReleaseToolError(f"config not found: {path}")
+    except UnicodeDecodeError as exc:
+        raise ReleaseToolError(f"config {path} is not valid UTF-8: {exc}")
     except json.JSONDecodeError as exc:
         raise ReleaseToolError(f"config {path} is not valid JSON: {exc}")
     if not isinstance(config, dict):
         raise ReleaseToolError(f"config {path} must be a JSON object")
 
-    _require(config, "mainBranch")
+    _require_str(config, "mainBranch")
     files = _require(config, "version.files")
     if not isinstance(files, list) or not files:
         raise ReleaseToolError("config key 'version.files' must be a non-empty list")
@@ -70,8 +82,12 @@ def load_config(path: Path) -> dict:
                 raise ReleaseToolError(
                     f"config is missing required key 'version.files[{i}].{key}'"
                 )
-    _require(config, "commit.branch")
-    _require(config, "release.tagFormat")
+            if not isinstance(entry[key], str) or not entry[key]:
+                raise ReleaseToolError(
+                    f"config key 'version.files[{i}].{key}' must be a non-empty string"
+                )
+    _require_str(config, "commit.branch")
+    _require_str(config, "release.tagFormat")
     return config
 
 
@@ -90,6 +106,8 @@ def read_version(repo_root: Path, vf: VersionFile, ref: str | None = None) -> st
             text = (repo_root / vf.path).read_text()
         except OSError as exc:
             raise ReleaseToolError(f"cannot read {vf.path}: {exc}")
+        except UnicodeDecodeError as exc:
+            raise ReleaseToolError(f"{vf.path} is not valid UTF-8: {exc}")
         source = vf.path
     else:
         text = git(["show", f"{ref}:{vf.path}"], repo_root)

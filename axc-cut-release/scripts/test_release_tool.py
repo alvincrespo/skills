@@ -23,6 +23,16 @@ import release_tool  # noqa: E402
 
 REAL_CONFIG = Path(__file__).resolve().parents[2] / ".claude" / "release.json"
 
+# Self-contained config so most tests don't track edits to the live one.
+FIXTURE_CONFIG = {
+    "mainBranch": "main",
+    "version": {
+        "files": [{"path": "pkg/version.json", "match": '"version": "{V}"'}]
+    },
+    "commit": {"branch": "release/v{V}"},
+    "release": {"tagFormat": "v{V}"},
+}
+
 
 def run_git(cwd: Path, *args: str) -> None:
     subprocess.run(
@@ -54,8 +64,8 @@ class RepoTestCase(unittest.TestCase):
         run_git(self.repo, "remote", "add", "origin", str(self.origin))
 
         (self.repo / ".claude").mkdir()
-        shutil.copy(REAL_CONFIG, self.repo / ".claude" / "release.json")
-        self.plugin = self.repo / ".claude-plugin" / "plugin.json"
+        (self.repo / ".claude" / "release.json").write_text(json.dumps(FIXTURE_CONFIG))
+        self.plugin = self.repo / "pkg" / "version.json"
         self.plugin.parent.mkdir()
         self.plugin.write_text('{\n  "name": "x",\n  "version": "0.3.0"\n}\n')
         run_git(self.repo, "add", "-A")
@@ -65,6 +75,16 @@ class RepoTestCase(unittest.TestCase):
 
 class CurrentTests(RepoTestCase):
     def test_prints_version_using_real_config(self) -> None:
+        # The one test tied to the live config, per the acceptance criteria.
+        shutil.copy(REAL_CONFIG, self.repo / ".claude" / "release.json")
+        real = json.loads(REAL_CONFIG.read_text())["version"]["files"][0]["path"]
+        target = self.repo / real
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('{\n  "version": "0.3.0"\n}\n')
+        code, out, _ = run_cli("current", "--repo-root", str(self.repo))
+        self.assertEqual((code, out), (0, "0.3.0\n"))
+
+    def test_prints_version(self) -> None:
         code, out, _ = run_cli("current", "--repo-root", str(self.repo))
         self.assertEqual((code, out), (0, "0.3.0\n"))
 
@@ -77,28 +97,56 @@ class CurrentTests(RepoTestCase):
         _, out, _ = run_cli("current", "--repo-root", str(self.repo))
         self.assertEqual(out, "9.9.9\n")
 
-    def test_unmatched_pattern_exits_2_naming_file(self) -> None:
-        cfg = json.loads(REAL_CONFIG.read_text())
-        cfg["version"]["files"][0]["match"] = "nope {V}"
+    def _run_with_config(self, cfg: dict) -> tuple[int, str, str]:
         path = self.repo / "custom.json"
         path.write_text(json.dumps(cfg))
-        code, out, err = run_cli(
-            "current", "--repo-root", str(self.repo), "--config", str(path)
-        )
+        return run_cli("current", "--repo-root", str(self.repo), "--config", str(path))
+
+    def test_unmatched_pattern_exits_2_naming_file(self) -> None:
+        cfg = json.loads(json.dumps(FIXTURE_CONFIG))
+        cfg["version"]["files"][0]["match"] = "nope {V}"
+        code, out, err = self._run_with_config(cfg)
         self.assertEqual(code, 2)
         self.assertEqual(out, "")
-        self.assertIn(".claude-plugin/plugin.json", err)
+        self.assertIn("pkg/version.json", err)
 
     def test_missing_tag_format_exits_2_naming_key(self) -> None:
-        cfg = json.loads(REAL_CONFIG.read_text())
+        cfg = json.loads(json.dumps(FIXTURE_CONFIG))
         del cfg["release"]["tagFormat"]
-        path = self.repo / "custom.json"
-        path.write_text(json.dumps(cfg))
+        code, _, err = self._run_with_config(cfg)
+        self.assertEqual(code, 2)
+        self.assertIn("release.tagFormat", err)
+
+    def test_non_string_config_values_exit_2(self) -> None:
+        for mutate, key in [
+            (lambda c: c["version"]["files"][0].update(match=5), "version.files[0].match"),
+            (lambda c: c["version"]["files"][0].update(path=None), "version.files[0].path"),
+            (lambda c: c.update(mainBranch=["main"]), "mainBranch"),
+            (lambda c: c["commit"].update(branch=1), "commit.branch"),
+            (lambda c: c["release"].update(tagFormat=""), "release.tagFormat"),
+        ]:
+            with self.subTest(key=key):
+                cfg = json.loads(json.dumps(FIXTURE_CONFIG))
+                mutate(cfg)
+                code, _, err = self._run_with_config(cfg)
+                self.assertEqual(code, 2)
+                self.assertIn(key, err)
+                self.assertNotIn("Traceback", err)
+
+    def test_non_utf8_version_file_exits_2(self) -> None:
+        self.plugin.write_bytes(b'\xff\xfe "version": "1.0.0"')
+        code, _, err = run_cli("current", "--repo-root", str(self.repo))
+        self.assertEqual(code, 2)
+        self.assertIn("pkg/version.json", err)
+
+    def test_non_utf8_config_exits_2(self) -> None:
+        path = self.repo / "bad.json"
+        path.write_bytes(b"\xff\xfe{}")
         code, _, err = run_cli(
             "current", "--repo-root", str(self.repo), "--config", str(path)
         )
         self.assertEqual(code, 2)
-        self.assertIn("release.tagFormat", err)
+        self.assertIn("UTF-8", err)
 
 
 class VersionRegexTests(unittest.TestCase):
