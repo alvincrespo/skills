@@ -38,7 +38,10 @@ To (re)link every skill into the local harness skill directories
 (`~/.claude/skills`, `~/.agents/skills`), run `scripts/link-skills.sh`. It
 discovers skill folders by presence of a `SKILL.md`, so it needs no edits
 when a new skill folder is added — just re-run it after adding, removing,
-or renaming one.
+or renaming one. It replaces existing symlinks but refuses to touch a real
+directory at a link's path (a copy installed by hand): it skips it, says
+so, and exits 1, so move the copy aside and re-run.
+`scripts/test-link-skills.sh` tests this against a throwaway `HOME`.
 
 Standalone `.skill` packaging (`scripts/package-standalone-skills.sh`) is
 only for skills that are fully self-contained and model-invoked. A skill
