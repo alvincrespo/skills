@@ -43,6 +43,7 @@ jobs:
           project-epic-planner/scripts/test_render_plan.py
           github-project-bootstrap/scripts/test_bootstrap_github_project.py
           github-labels-setup/scripts/test_ensure_labels.py
+          axc-cut-release/scripts/test_release_tool.py
 
       # axc-og-cards is Node: sharp needs 20.9+, and CI uses the current LTS.
       - uses: actions/setup-node@v4
