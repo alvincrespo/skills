@@ -335,21 +335,55 @@ class BumpTests(RepoTestCase):
         )
 
     def test_write_failure_rolls_back_and_exits_2(self) -> None:
-        real_open = open
-        target = self.go
-
-        def flaky_open(file, mode="r", *a, **kw):
-            if Path(file) == target and "w" in mode:
-                raise OSError("disk full")
-            return real_open(file, mode, *a, **kw)
-
         from unittest import mock
+        real = release_tool._write_atomic
+
+        def flaky(path, text):
+            if path == self.go:
+                raise OSError("disk full")
+            return real(path, text)
+
         before = self.plugin.read_text()
-        with mock.patch("builtins.open", flaky_open):
+        with mock.patch.object(release_tool, "_write_atomic", flaky):
             code, _, err = self.run_cmd("bump", "0.4.0")
         self.assertEqual(code, 2)
         self.assertIn("rolled back", err)
         self.assertEqual(self.plugin.read_text(), before)
+
+    def test_failed_rollback_is_reported_not_claimed(self) -> None:
+        from unittest import mock
+        real = release_tool._write_atomic
+        calls = {"plugin": 0}
+
+        def flaky(path, text):
+            if path == self.go:
+                raise OSError("disk full")
+            calls["plugin"] += 1
+            if calls["plugin"] > 1:  # the restore write
+                raise OSError("read-only")
+            return real(path, text)
+
+        with mock.patch.object(release_tool, "_write_atomic", flaky):
+            code, _, err = self.run_cmd("bump", "0.4.0")
+        self.assertEqual(code, 2)
+        self.assertNotIn("rolled back", err)
+        self.assertIn("could not be restored", err)
+        self.assertIn("pkg/version.json", err)
+
+    def test_failed_atomic_write_leaves_file_and_no_temp(self) -> None:
+        from unittest import mock
+        before = self.go.read_text()
+        with mock.patch.object(release_tool.os, "replace", side_effect=OSError("nope")):
+            with self.assertRaises(OSError):
+                release_tool._write_atomic(self.go, "changed")
+        self.assertEqual(self.go.read_text(), before)
+        self.assertEqual(list(self.repo.glob("*.release-tmp")), [])
+
+    def test_bump_command_is_echoed_to_stderr(self) -> None:
+        self.cfg["version"]["bumpCommand"] = "true {V}"
+        self.cfg_path.write_text(json.dumps(self.cfg))
+        _, _, err = self.run_cmd("bump", "0.4.0")
+        self.assertIn("running bumpCommand: true 0.4.0", err)
 
     def test_literal_suffix_after_placeholder(self) -> None:
         self.go.write_text('const Version = "0.3.0-SNAPSHOT"\n')
@@ -480,8 +514,18 @@ class PhaseTests(RepoTestCase):
         self.assertIn("older than", err)
         self.assertEqual(self.gh_calls, [])
 
-    def test_prerelease_of_current_main_triple_is_bump(self) -> None:
-        self.assertEqual(self.phase("0.4.0-rc.1")[:2], (0, "bump\n"))
+    def test_prerelease_of_the_version_on_main_is_older(self) -> None:
+        code, out, err = self.phase("0.4.0-rc.1")
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("older than", err)
+
+    def test_prerelease_after_a_prerelease_on_main(self) -> None:
+        self.plugin.write_text('{\n  "version": "0.5.0-rc.2"\n}\n')
+        run_git(self.repo, "commit", "-qam", "rc2")
+        run_git(self.repo, "push", "origin", "main")
+        self.assertEqual(self.phase("0.5.0-rc.1")[0], 2)
+        self.assertEqual(self.phase("0.5.0-rc.10")[:2], (0, "bump\n"))
+        self.assertEqual(self.phase("0.5.0")[:2], (0, "bump\n"))
 
     def test_unreachable_origin_exits_2_with_hint(self) -> None:
         run_git(self.repo, "remote", "set-url", "origin", str(self.repo.parent / "gone.git"))
@@ -495,13 +539,14 @@ class PhaseTests(RepoTestCase):
         self.assertEqual(code, 2)
         self.assertIn("'origin' remote", err)
 
-    def test_gh_failure_exits_2(self) -> None:
+    def test_gh_failure_still_reports_bump_with_a_warning(self) -> None:
         from unittest import mock
         err = release_tool.ReleaseToolError("gh is not installed or not on PATH")
         with mock.patch.object(release_tool, "gh", side_effect=err):
-            code, _, stderr = run_cli("phase", "0.5.0", "--repo-root", str(self.repo))
-        self.assertEqual(code, 2)
-        self.assertIn("gh", stderr)
+            code, out, stderr = run_cli("phase", "0.5.0", "--repo-root", str(self.repo))
+        self.assertEqual((code, out), (0, "bump\n"))
+        self.assertIn("warning: could not check for an open release PR", stderr)
+        self.assertIn("gh is not installed", stderr)
 
 
 class PhaseMultiFileTests(RepoTestCase):
@@ -644,6 +689,11 @@ class VersionRegexTests(unittest.TestCase):
     def test_captures_prerelease(self) -> None:
         m = release_tool.version_regex('"version": "{V}"').search('"version": "1.2.3-rc.1"')
         self.assertEqual(m.group(1), "1.2.3-rc.1")
+
+    def test_rejects_leading_zero_version(self) -> None:
+        pattern = release_tool.version_regex('"version": "{V}"')
+        self.assertIsNone(pattern.search('"version": "01.2.3"'))
+        self.assertIsNone(pattern.search('"version": "1.02.3"'))
 
     def test_rejects_two_part_version(self) -> None:
         self.assertIsNone(release_tool.version_regex('"version": "{V}"').search('"version": "1.2"'))

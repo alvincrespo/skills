@@ -12,7 +12,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -107,7 +109,7 @@ def version_regex(match: str) -> re.Pattern:
     if match.count("{V}") != 1:
         raise ReleaseToolError(f"match {match!r} must contain exactly one '{{V}}'")
     pattern = re.escape(match).replace(
-        re.escape("{V}"), r"(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)"
+        re.escape("{V}"), r"((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?)"
     )
     return re.compile(pattern)
 
@@ -194,8 +196,14 @@ def tag_status(repo_root: Path, tag: str) -> str:
             (False, True): "remote", (True, True): "both"}[(local, remote)]
 
 
-def _triple(v: str) -> tuple[int, ...]:
-    return tuple(int(n) for n in v.split("-")[0].split("."))
+def _precedence(v: str) -> tuple:
+    """SemVer ordering key: a final release sorts above its own prereleases."""
+    core, _, pre = v.partition("-")
+    nums = tuple(int(n) for n in core.split("."))
+    if not pre:
+        return (nums, (1,))
+    ids = tuple((0, int(i), "") if i.isdigit() else (1, 0, i) for i in pre.split("."))
+    return (nums, (0, ids))
 
 
 def release_phase(repo_root: Path, config: dict, v: str) -> list[str]:
@@ -210,18 +218,23 @@ def release_phase(repo_root: Path, config: dict, v: str) -> list[str]:
             f"{v} is on origin/{main} in some version files but not others ({detail})"
         )
     if not any(matches):
-        newest = max(on_main, key=_triple)
-        if _triple(v) < _triple(newest):
+        newest = max(on_main, key=_precedence)
+        if _precedence(v) < _precedence(newest):
             raise ReleaseToolError(
                 f"{v} is older than the version already on origin/{main} ({newest})"
             )
         lines = ["bump"]
         branch = config["commit"]["branch"].replace("{V}", v)
-        number = gh(
-            ["pr", "list", "--head", branch, "--state", "open",
-             "--json", "number", "-q", ".[0].number"],
-            repo_root,
-        ).strip()
+        try:
+            number = gh(
+                ["pr", "list", "--head", branch, "--state", "open",
+                 "--json", "number", "-q", ".[0].number"],
+                repo_root,
+            ).strip()
+        except ReleaseToolError as exc:
+            # The phase is already known; only the duplicate-PR lookup failed.
+            print(f"warning: could not check for an open release PR: {exc}", file=sys.stderr)
+            return lines
         if number.isdigit():
             lines.append(f"open-pr {number}")
         return lines
@@ -280,6 +293,22 @@ def _require_semver(v: str) -> str:
     return v
 
 
+def _write_atomic(path: Path, text: str) -> None:
+    """Replace path's contents via a temp file, so a failed write never leaves it truncated."""
+    tmp = path.with_name(path.name + ".release-tmp")
+    try:
+        with open(tmp, "w", newline="", encoding="utf-8") as fh:
+            fh.write(text)
+        shutil.copymode(path, tmp)
+        os.replace(tmp, path)
+    except OSError:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+        raise
+
+
 def bump_files(repo_root: Path, files: list[VersionFile], v: str) -> None:
     """Rewrite only the version literal in every file; write nothing if any file fails."""
     _require_semver(v)
@@ -305,16 +334,20 @@ def bump_files(repo_root: Path, files: list[VersionFile], v: str) -> None:
     written: list[Path] = []
     try:
         for path, text in updated.items():
-            with open(path, "w", newline="", encoding="utf-8") as fh:
-                written.append(path)
-                fh.write(text)
+            _write_atomic(path, text)
+            written.append(path)
     except OSError as exc:
+        failed = []
         for path in written:
             try:
-                with open(path, "w", newline="", encoding="utf-8") as fh:
-                    fh.write(originals[path])
+                _write_atomic(path, originals[path])
             except OSError:
-                pass
+                failed.append(str(path.relative_to(repo_root)))
+        if failed:
+            raise ReleaseToolError(
+                f"writing version files failed ({exc}) and these could not be restored: "
+                + ", ".join(failed)
+            )
         raise ReleaseToolError(f"writing version files failed, changes rolled back: {exc}")
 
 
@@ -343,6 +376,7 @@ def cmd_bump(args: argparse.Namespace, repo_root: Path, config: dict) -> int:
     command = config["version"].get("bumpCommand")
     if command is not None:
         _require_semver(args.version)
+        print(f"running bumpCommand: {command.replace('{V}', args.version)}", file=sys.stderr)
         try:
             result = subprocess.run(
                 command.replace("{V}", args.version), shell=True, cwd=repo_root,

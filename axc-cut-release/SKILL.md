@@ -36,35 +36,58 @@ Show the resolved/inferred config and confirm before proceeding. Fields used her
 Optional. One of:
 
 - **A semver keyword** — `patch`, `minor`, or `major`. Computed off the current `main` version.
-- **An explicit version** — `0.3.0`, or a prerelease like `0.3.0-rc.1`. Must match
-  `^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$`. Prerelease tags (containing `alpha`/`beta`/`rc`) are usually
-  auto-flagged as prereleases by the release workflow — no extra handling here.
-- **Nothing** — infer intent (see Phase detection). On a fresh cut, propose the next **patch** off
-  the current version and confirm before doing anything.
+- **An explicit version** — `0.3.0`, or a prerelease like `0.3.0-rc.1`. Prerelease tags (containing
+  `alpha`/`beta`/`rc`) are usually auto-flagged as prereleases by the release workflow — no extra
+  handling here.
+- **Nothing** — infer intent (see below). On a fresh cut, propose the next **patch** off the current
+  version and confirm before doing anything.
+
+## The helper script
+
+The version, tag and phase logic lives in `scripts/release_tool.py` (standard library only, tested in
+`scripts/test_release_tool.py`). Run it from the repo being released; it reads `.claude/release.json`
+and git state, and takes `--repo-root PATH` / `--config PATH` if you need to point it elsewhere:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/scripts/release_tool.py" <subcommand> [args]
+```
+
+Exit `0` = ok, `1` = a check failed, `2` = bad input or config (message on stderr). On exit `2`, stop
+and show the user the message — don't work around it — except for the one case spelled out under
+"Resolve target version" (a keyword refused because the current version is a prerelease), where you
+ask for an explicit version instead. Don't recompute versions or phases by hand.
 
 ## Resolve target version `V`
 
-1. `git fetch origin <mainBranch>`, then read the version from `origin/<mainBranch>`'s
-   `version.files[0].path` → call it `cur`. Use `git show origin/<mainBranch>:<path>` and extract the
-   literal using `version.files[0].match` (the `{V}` placeholder marks where the version sits). Read
-   from `origin/<mainBranch>`, not the working tree, so a dirty/stale local checkout can't skew the math.
-2. Compute `V`:
-   - Keyword arg → bump `cur` (`patch`: z+1; `minor`: y+1, z=0; `major`: x+1, y=0, z=0).
-   - Explicit arg → `V = arg` (validate the regex above; reject otherwise).
-   - No arg → if `cur` is **not yet tagged** (`<tagFormat>` missing locally and on origin), infer the
-     user wants to tag the already-merged version: `V = cur`. Otherwise propose `V = patch-bump(cur)`
-     and **confirm with the user before proceeding**.
+1. `git fetch origin <mainBranch>`, so `origin/<mainBranch>` is current.
+2. Get `V`:
+   - **Keyword or explicit arg** → `release_tool.py next <arg>` prints `V`. It validates an explicit
+     version and rejects anything malformed. If it refuses a keyword because the current version is a
+     prerelease (`1.0.0-rc.1`), ask the user for an explicit version.
+   - **No arg** → `release_tool.py current --ref origin/<mainBranch>` prints `cur`, then
+     `release_tool.py tag-status <cur>`:
+     - `absent` → the user likely wants to tag the already-merged version: propose `V = cur`.
+     - `local` → the tag exists only in this clone and was never pushed, so `cur` isn't released.
+       Tell the user: they can push it, or delete it (`git tag -d <tag>`) and re-run. Don't do either
+       for them, and don't bump past it.
+     - `remote` or `both` → `cur` is already released: propose `V = ` the output of
+       `release_tool.py next` (a patch bump) and **confirm with the user before proceeding**.
 
 ## Phase detection
 
-Compare `V` to `cur` (= `origin/<mainBranch>`'s version):
+Run `release_tool.py phase <V>` (it fetches `origin/<mainBranch>` itself). Its first line is one of:
 
-- **`cur == V`** → the bump is already on `main`. Route to **Phase 2**. But first: if tag
-  `<tagFormat>` already exists (local or origin), this version is already released — stop and say so
-  (retagging is a separate, destructive op, out of scope).
-- **`cur != V`** → the bump isn't on `main` yet. Route to **Phase 1**. First check for an existing
-  open release PR (`gh pr list --head <commit.branch> --state open`). If one exists, don't open a
-  duplicate — tell the user to merge it, then re-run to tag.
+- **`tag`** → the bump is already on `main` and the tag doesn't exist. Route to **Phase 2**.
+- **`released`** → a tag for `V` already exists. Run `release_tool.py tag-status <V>` to see where:
+  - `remote` or `both` → released. Stop and say so (retagging is a separate, destructive op, out of
+    scope).
+  - `local` → it was never pushed, so nothing was published. Stop and say that: the user can push the
+    tag, or delete it (`git tag -d <tag>`) and re-run. Don't do either for them.
+- **`bump`** → the bump isn't on `main` yet. Route to **Phase 1**. If a second line `open-pr <N>`
+  follows, a release PR is already open: tell the user to merge PR `N`, then re-run to tag. Don't open
+  a duplicate. If stderr instead says `warning: could not check for an open release PR`, the lookup
+  failed (for example `gh` isn't installed or logged in): tell the user, and ask whether a release PR
+  for the branch is already open before routing to Phase 1.
 
 State the resolved version, the detected phase, and what will happen, before routing.
 
@@ -84,11 +107,5 @@ which re-reads the config and repo state independently.
 
 ## Implementation hints
 
-- Read `origin/<mainBranch>`'s version without checking it out: `git show origin/<mainBranch>:<path>`,
-  then apply the `match` pattern. No extra network round trip after `git fetch`.
-- Tag existence check covers both local and remote: `git tag -l <tagFormat>` and
-  `git ls-remote --tags origin <tagFormat>`.
-- Semver bump math: split `cur` on `.`; a prerelease suffix on `cur` makes keyword bumps ambiguous —
-  if `cur` has a `-suffix`, ask for an explicit `V` rather than guessing.
-- Run independent read-only checks (fetch, tag lookup, PR lookup) together in one message.
+- Run independent read-only checks together in one message.
 - Keep messages tight: state version, phase, action. The user is cutting a release, not reading a tutorial.
