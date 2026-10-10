@@ -158,6 +158,9 @@ class NextVersionTests(unittest.TestCase):
             ("0.3.0", "0.5.0-rc.1", "0.5.0-rc.1"),
             ("0.3.0", None, "0.3.1"),
             ("1.0.0-rc.1", "2.0.0", "2.0.0"),
+            ("1.4.7", "minor", "1.5.0"),
+            ("1.4.7", "major", "2.0.0"),
+            ("1.4.7", "patch", "1.4.8"),
         ]:
             with self.subTest(cur=cur, arg=arg):
                 self.assertEqual(release_tool.next_version(cur, arg), want)
@@ -169,13 +172,34 @@ class NextVersionTests(unittest.TestCase):
                     release_tool.next_version("1.0.0-rc.1", arg)
 
     def test_bad_explicit_versions_rejected(self) -> None:
-        for arg in ("1.2", "v1.2.3", "banana"):
+        for arg in (
+            "1.2", "v1.2.3", "banana", "1.2.3\n", "01.2.3", "1.02.3",
+            "1.0.0-", "1.0.0--.", "1.0.0-a..b", "1.0.0-.a", " 1.2.3",
+        ):
             with self.subTest(arg=arg):
                 with self.assertRaises(release_tool.ReleaseToolError):
                     release_tool.next_version("0.3.0", arg)
 
 
 class NextCommandTests(RepoTestCase):
+    def test_explicit_version_does_not_need_git(self) -> None:
+        # No config-reachable ref and no git repo at all: still echoes the version.
+        bare = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, bare, ignore_errors=True)
+        cfg = bare / "release.json"
+        cfg.write_text(json.dumps(FIXTURE_CONFIG))
+        code, out, _ = run_cli(
+            "next", "2.0.0-rc.1", "--repo-root", str(bare), "--config", str(cfg)
+        )
+        self.assertEqual((code, out), (0, "2.0.0-rc.1\n"))
+
+    def test_keyword_with_missing_ref_exits_2(self) -> None:
+        code, _, err = run_cli(
+            "next", "patch", "--ref", "origin/nope", "--repo-root", str(self.repo)
+        )
+        self.assertEqual(code, 2)
+        self.assertIn("origin/nope", err)
+
     def test_defaults_to_origin_main_ignoring_working_tree(self) -> None:
         self.plugin.write_text('{\n  "version": "9.9.9"\n}\n')
         code, out, _ = run_cli("next", "minor", "--repo-root", str(self.repo))

@@ -118,19 +118,21 @@ def read_version(repo_root: Path, vf: VersionFile, ref: str | None = None) -> st
     return found.group(1)
 
 
-SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$")
+_NUM = r"(?:0|[1-9]\d*)"
+_PRE_ID = r"[0-9A-Za-z-]+"
+SEMVER_RE = re.compile(rf"{_NUM}\.{_NUM}\.{_NUM}(?:-{_PRE_ID}(?:\.{_PRE_ID})*)?")
 KEYWORDS = ("patch", "minor", "major")
 
 
 def next_version(cur: str, arg: str | None) -> str:
     if arg is not None and arg not in KEYWORDS:
-        if not SEMVER_RE.match(arg):
+        if not SEMVER_RE.fullmatch(arg):
             raise ReleaseToolError(
                 f"{arg!r} is not a bump keyword (patch, minor, major) "
                 "or an explicit X.Y.Z[-prerelease] version"
             )
         return arg
-    if not SEMVER_RE.match(cur):
+    if not SEMVER_RE.fullmatch(cur):
         raise ReleaseToolError(f"current version {cur!r} is not X.Y.Z[-prerelease]")
     if "-" in cur:
         raise ReleaseToolError(
@@ -149,6 +151,10 @@ def next_version(cur: str, arg: str | None) -> str:
 def cmd_next(args: argparse.Namespace, repo_root: Path, config: dict) -> int:
     entry = config["version"]["files"][0]
     vf = VersionFile(path=entry["path"], match=entry["match"])
+    if args.arg is not None and args.arg not in KEYWORDS:
+        # An explicit version doesn't depend on the current one, so don't touch git.
+        print(next_version("", args.arg))
+        return 0
     ref = args.ref or f"origin/{config['mainBranch']}"
     print(next_version(read_version(repo_root, vf, ref), args.arg))
     return 0
