@@ -86,6 +86,13 @@ def load_config(path: Path) -> dict:
                 raise ReleaseToolError(
                     f"config key 'version.files[{i}].{key}' must be a non-empty string"
                 )
+    bump_command = config["version"].get("bumpCommand")
+    if bump_command is not None and (
+        not isinstance(bump_command, str) or "{V}" not in bump_command
+    ):
+        raise ReleaseToolError(
+            "config key 'version.bumpCommand' must be a string containing '{V}'"
+        )
     _require_str(config, "commit.branch")
     _require_str(config, "release.tagFormat")
     return config
@@ -122,6 +129,7 @@ _NUM = r"(?:0|[1-9]\d*)"
 _PRE_ID = r"[0-9A-Za-z-]+"
 SEMVER_RE = re.compile(rf"{_NUM}\.{_NUM}\.{_NUM}(?:-{_PRE_ID}(?:\.{_PRE_ID})*)?")
 KEYWORDS = ("patch", "minor", "major")
+BUMP_COMMAND_TIMEOUT = 300  # seconds
 
 
 def next_version(cur: str, arg: str | None) -> str:
@@ -161,22 +169,39 @@ def _require_semver(v: str) -> str:
 def bump_files(repo_root: Path, files: list[VersionFile], v: str) -> None:
     """Rewrite only the version literal in every file; write nothing if any file fails."""
     _require_semver(v)
-    updated: list[tuple[Path, str]] = []
+    originals: dict[Path, str] = {}
+    updated: dict[Path, str] = {}
     for vf in files:
         path = repo_root / vf.path
-        try:
-            text = path.read_text()
-        except OSError as exc:
-            raise ReleaseToolError(f"cannot read {vf.path}: {exc}")
-        except UnicodeDecodeError as exc:
-            raise ReleaseToolError(f"{vf.path} is not valid UTF-8: {exc}")
-        found = version_regex(vf.match).search(text)
+        if path not in updated:
+            try:
+                # newline="" keeps CRLF files byte-for-byte apart from the literal.
+                with open(path, newline="", encoding="utf-8") as fh:
+                    originals[path] = updated[path] = fh.read()
+            except OSError as exc:
+                raise ReleaseToolError(f"cannot read {vf.path}: {exc}")
+            except UnicodeDecodeError as exc:
+                raise ReleaseToolError(f"{vf.path} is not valid UTF-8: {exc}")
+        # Chain edits per path so two entries for one file both survive.
+        found = version_regex(vf.match).search(updated[path])
         if not found:
             raise ReleaseToolError(f"{vf.path}: pattern {vf.match!r} did not match")
         start, end = found.span(1)
-        updated.append((path, text[:start] + v + text[end:]))
-    for path, text in updated:
-        path.write_text(text)
+        updated[path] = updated[path][:start] + v + updated[path][end:]
+    written: list[Path] = []
+    try:
+        for path, text in updated.items():
+            with open(path, "w", newline="", encoding="utf-8") as fh:
+                written.append(path)
+                fh.write(text)
+    except OSError as exc:
+        for path in written:
+            try:
+                with open(path, "w", newline="", encoding="utf-8") as fh:
+                    fh.write(originals[path])
+            except OSError:
+                pass
+        raise ReleaseToolError(f"writing version files failed, changes rolled back: {exc}")
 
 
 def check_versions(repo_root: Path, files: list[VersionFile], v: str) -> tuple[list[str], bool]:
@@ -204,12 +229,14 @@ def cmd_bump(args: argparse.Namespace, repo_root: Path, config: dict) -> int:
     command = config["version"].get("bumpCommand")
     if command is not None:
         _require_semver(args.version)
-        if not isinstance(command, str) or not command.strip():
-            raise ReleaseToolError("config key 'version.bumpCommand' must be a non-empty string")
-        result = subprocess.run(
-            command.replace("{V}", args.version), shell=True, cwd=repo_root,
-            capture_output=True, text=True,
-        )
+        try:
+            result = subprocess.run(
+                command.replace("{V}", args.version), shell=True, cwd=repo_root,
+                capture_output=True, text=True, errors="replace",
+                stdin=subprocess.DEVNULL, timeout=BUMP_COMMAND_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired:
+            raise ReleaseToolError(f"bumpCommand timed out after {BUMP_COMMAND_TIMEOUT}s")
         if result.returncode != 0:
             detail = result.stderr.strip() or result.stdout.strip()
             raise ReleaseToolError(f"bumpCommand failed (exit {result.returncode}): {detail}")
