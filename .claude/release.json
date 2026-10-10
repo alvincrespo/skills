@@ -30,7 +30,8 @@
       "scripts/package-standalone-skills.sh",
       "gh release create",
       "dist/*.skill",
-      "scripts/test-link-skills.sh"
+      "scripts/test-link-skills.sh",
+      "axc-cut-release/scripts/test_release_tool.py"
     ]
   }
 }
