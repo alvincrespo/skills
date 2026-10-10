@@ -227,6 +227,104 @@ class NextCommandTests(RepoTestCase):
         self.assertIn("explicit version", err)
 
 
+class BumpTests(RepoTestCase):
+    GO_MATCH = 'const Version = "{V}"'
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.go = self.repo / "version.go"
+        self.go.write_text('package x\n\nconst Version = "0.3.0"\n\nconst Other = "0.3.0"\n')
+        self.cfg = json.loads(json.dumps(FIXTURE_CONFIG))
+        self.cfg["version"]["files"].append({"path": "version.go", "match": self.GO_MATCH})
+        self.cfg_path = self.repo / "two.json"
+        self.cfg_path.write_text(json.dumps(self.cfg))
+        run_git(self.repo, "add", "-A")
+        run_git(self.repo, "commit", "-qm", "two files")
+
+    def run_cmd(self, *argv: str) -> tuple[int, str, str]:
+        return run_cli(*argv, "--repo-root", str(self.repo), "--config", str(self.cfg_path))
+
+    def diff_changed_lines(self) -> list[str]:
+        out = subprocess.run(
+            ["git", "-C", str(self.repo), "diff", "--unified=0"],
+            capture_output=True, text=True, check=True,
+        ).stdout
+        return [l for l in out.splitlines() if l[:1] in "+-" and l[:3] not in ("+++", "---")]
+
+    def test_bump_updates_both_files_with_exactly_two_changed_lines(self) -> None:
+        code, out, _ = self.run_cmd("bump", "0.4.0")
+        self.assertEqual(code, 0)
+        self.assertIn("✓ pkg/version.json = 0.4.0", out)
+        self.assertIn("✓ version.go = 0.4.0", out)
+        changed = self.diff_changed_lines()
+        self.assertEqual(len(changed), 4, changed)  # two removed + two added
+        self.assertIn('const Other = "0.3.0"', self.go.read_text())
+
+    def test_missing_pattern_in_second_file_leaves_first_unchanged(self) -> None:
+        self.go.write_text("package x\n")
+        before = self.plugin.read_text()
+        code, _, err = self.run_cmd("bump", "0.4.0")
+        self.assertEqual(code, 2)
+        self.assertIn("version.go", err)
+        self.assertEqual(self.plugin.read_text(), before)
+
+    def test_bump_rejects_bad_version(self) -> None:
+        code, _, err = self.run_cmd("bump", "v0.4.0")
+        self.assertEqual(code, 2)
+        self.assertIn("v0.4.0", err)
+        self.assertEqual(self.diff_changed_lines(), [])
+
+    def test_check_versions_fails_before_and_passes_after_bump(self) -> None:
+        code, out, _ = self.run_cmd("check-versions", "0.4.0")
+        self.assertEqual(code, 1)
+        self.assertIn("✗ pkg/version.json = 0.3.0 (expected 0.4.0)", out)
+        self.assertIn("✗ version.go = 0.3.0 (expected 0.4.0)", out)
+        self.run_cmd("bump", "0.4.0")
+        code, out, _ = self.run_cmd("check-versions", "0.4.0")
+        self.assertEqual(code, 0)
+        self.assertEqual(out.count("✓"), 2)
+
+    def test_check_versions_flags_disagreeing_files(self) -> None:
+        self.go.write_text('const Version = "0.5.0"\n')
+        code, out, _ = self.run_cmd("check-versions", "0.3.0")
+        self.assertEqual(code, 1)
+        self.assertIn("disagree", out)
+
+    def test_check_versions_reports_unreadable_file_without_aborting(self) -> None:
+        self.go.write_text("nothing here\n")
+        code, out, _ = self.run_cmd("check-versions", "0.3.0")
+        self.assertEqual(code, 1)
+        self.assertIn("✓ pkg/version.json = 0.3.0", out)
+        self.assertIn("✗ version.go", out)
+
+    def test_bump_command_runs_and_is_verified(self) -> None:
+        script = (
+            "import re,sys,pathlib;v=sys.argv[1];"
+            "[p.write_text(re.sub(r'\\d+\\.\\d+\\.\\d+', v, p.read_text(), count=1)) "
+            "for p in map(pathlib.Path, ['pkg/version.json','version.go'])]"
+        )
+        self.cfg["version"]["bumpCommand"] = f"python3 -c \"{script}\" {{V}}"
+        self.cfg_path.write_text(json.dumps(self.cfg))
+        code, out, _ = self.run_cmd("bump", "0.4.0")
+        self.assertEqual(code, 0, out)
+        code, _, _ = self.run_cmd("check-versions", "0.4.0")
+        self.assertEqual(code, 0)
+
+    def test_bump_command_that_leaves_files_stale_exits_1(self) -> None:
+        self.cfg["version"]["bumpCommand"] = "true"
+        self.cfg_path.write_text(json.dumps(self.cfg))
+        code, out, _ = self.run_cmd("bump", "0.4.0")
+        self.assertEqual(code, 1)
+        self.assertIn("✗", out)
+
+    def test_failing_bump_command_exits_2(self) -> None:
+        self.cfg["version"]["bumpCommand"] = "exit 3"
+        self.cfg_path.write_text(json.dumps(self.cfg))
+        code, _, err = self.run_cmd("bump", "0.4.0")
+        self.assertEqual(code, 2)
+        self.assertIn("bumpCommand", err)
+
+
 class VersionRegexTests(unittest.TestCase):
     def test_captures_prerelease(self) -> None:
         m = release_tool.version_regex('"version": "{V}"').search('"version": "1.2.3-rc.1"')
