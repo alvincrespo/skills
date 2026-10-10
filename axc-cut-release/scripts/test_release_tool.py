@@ -536,6 +536,110 @@ class PhaseMultiFileTests(RepoTestCase):
         self.assertEqual(self.phase("0.4.0")[:2], (0, "tag\n"))
 
 
+class WorkflowChecksTests(unittest.TestCase):
+    REPO = REAL_CONFIG.parents[1]
+    WORKFLOW = ".github/workflows/release.yml"
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.cfg = json.loads(json.dumps(FIXTURE_CONFIG))
+        self.cfg["release"].update(
+            workflow=self.WORKFLOW,
+            workflowChecks=["tags: [\"v*\"]", "contents: write", "gh release create"],
+        )
+        self.workflow = self.tmp / self.WORKFLOW
+        self.workflow.parent.mkdir(parents=True)
+        self.workflow.write_text(
+            'on:\n  push:\n    tags: ["v*"]\npermissions:\n  contents: write\n'
+            "steps:\n  - run: gh release create $TAG\n"
+        )
+
+    def run_cmd(self, root: Path | None = None) -> tuple[int, str, str]:
+        cfg_path = self.tmp / "release.json"
+        cfg_path.write_text(json.dumps(self.cfg))
+        return run_cli(
+            "workflow-checks", "--repo-root", str(root or self.tmp), "--config", str(cfg_path)
+        )
+
+    def test_real_config_and_workflow_pass(self) -> None:
+        # The one test tied to the live files, per the acceptance criteria.
+        real = json.loads(REAL_CONFIG.read_text())
+        code, out, err = run_cli(
+            "workflow-checks", "--repo-root", str(self.REPO), "--config", str(REAL_CONFIG)
+        )
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(out.count("✓"), len(real["release"]["workflowChecks"]))
+        self.assertNotIn("✗", out)
+
+    def test_all_checks_present(self) -> None:
+        code, out, _ = self.run_cmd()
+        self.assertEqual(code, 0)
+        self.assertEqual(out.count("✓"), 3)
+
+    def test_missing_check_exits_1_and_is_marked(self) -> None:
+        self.workflow.write_text(self.workflow.read_text().replace("contents: write", "contents: read"))
+        code, out, _ = self.run_cmd()
+        self.assertEqual(code, 1)
+        self.assertIn("✗ contents: write (not found in .github/workflows/release.yml)", out)
+        self.assertIn("✓ gh release create", out)
+
+    def test_missing_workflow_file_exits_2(self) -> None:
+        self.workflow.unlink()
+        code, out, err = self.run_cmd()
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn(".github/workflows/release.yml", err)
+
+    def test_workflow_path_outside_repo_exits_2(self) -> None:
+        outside = self.tmp / "outside.yml"
+        outside.write_text("contents: write\n")
+        repo = self.tmp / "repo"
+        repo.mkdir()
+        for bad in ("../outside.yml", str(outside)):
+            with self.subTest(path=bad):
+                self.cfg["release"]["workflow"] = bad
+                code, out, err = self.run_cmd(root=repo)
+                self.assertEqual((code, out), (2, ""))
+                self.assertIn("inside the repo", err)
+
+    def test_missing_workflow_key_exits_2_naming_it(self) -> None:
+        del self.cfg["release"]["workflow"]
+        code, _, err = self.run_cmd()
+        self.assertEqual(code, 2)
+        self.assertIn("release.workflow", err)
+
+    def test_no_checks_configured_passes_with_notice(self) -> None:
+        del self.cfg["release"]["workflowChecks"]
+        code, out, _ = self.run_cmd()
+        self.assertEqual(code, 0)
+        self.assertIn("no release.workflowChecks", out)
+
+    def test_bad_checks_type_exits_2(self) -> None:
+        self.cfg["release"]["workflowChecks"] = ["ok", 5]
+        code, _, err = self.run_cmd()
+        self.assertEqual(code, 2)
+        self.assertIn("release.workflowChecks", err)
+
+
+class AsciiStdoutTests(unittest.TestCase):
+    def test_glyphs_do_not_crash_under_ascii_stdout(self) -> None:
+        tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, tmp, ignore_errors=True)
+        (tmp / "wf.yml").write_text("a\n")
+        cfg = tmp / "release.json"
+        full = json.loads(json.dumps(FIXTURE_CONFIG))
+        full["release"].update(workflow="wf.yml", workflowChecks=["a", "b"])
+        cfg.write_text(json.dumps(full))
+        result = subprocess.run(
+            [sys.executable, str(Path(release_tool.__file__)), "workflow-checks",
+             "--repo-root", str(tmp), "--config", str(cfg)],
+            capture_output=True, text=True, env={"PYTHONIOENCODING": "ascii", "PATH": "/usr/bin:/bin"},
+        )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertIn("b (not found in wf.yml)", result.stdout)
+
+
 class VersionRegexTests(unittest.TestCase):
     def test_captures_prerelease(self) -> None:
         m = release_tool.version_regex('"version": "{V}"').search('"version": "1.2.3-rc.1"')
