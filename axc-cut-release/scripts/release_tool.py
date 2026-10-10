@@ -156,6 +156,72 @@ def next_version(cur: str, arg: str | None) -> str:
     return f"{x}.{y}.{z + 1}"
 
 
+def gh(args: list[str], repo_root: Path) -> str:
+    """Run `gh <args>` in repo_root. Kept separate from git() so tests can replace it."""
+    try:
+        result = subprocess.run(
+            ["gh", *args], cwd=repo_root, capture_output=True, text=True,
+            errors="replace", stdin=subprocess.DEVNULL,
+        )
+    except FileNotFoundError:
+        raise ReleaseToolError("gh is not installed or not on PATH")
+    if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        raise ReleaseToolError(f"gh {' '.join(args)} failed: {detail}")
+    return result.stdout
+
+
+def format_tag(config: dict, v: str) -> str:
+    return config["release"]["tagFormat"].replace("{V}", v)
+
+
+def tag_status(repo_root: Path, tag: str) -> str:
+    """One of: absent, local, remote, both."""
+    local = bool(git(["tag", "-l", tag], repo_root).strip())
+    ref = f"refs/tags/{tag}"
+    # ls-remote patterns match on a trailing path, so compare the ref names exactly
+    # (annotated tags also list a peeled `<ref>^{}` line).
+    listed = git(["ls-remote", "--tags", "origin", ref], repo_root).splitlines()
+    remote = any(
+        line.split("\t")[-1] in (ref, f"{ref}^{{}}") for line in listed if "\t" in line
+    )
+    return {(False, False): "absent", (True, False): "local",
+            (False, True): "remote", (True, True): "both"}[(local, remote)]
+
+
+def release_phase(repo_root: Path, config: dict, v: str) -> list[str]:
+    main = config["mainBranch"]
+    git(["fetch", "origin", main], repo_root)
+    entry = config["version"]["files"][0]
+    on_main = read_version(
+        repo_root, VersionFile(path=entry["path"], match=entry["match"]), f"origin/{main}"
+    )
+    if on_main != v:
+        lines = ["bump"]
+        branch = config["commit"]["branch"].replace("{V}", v)
+        number = gh(
+            ["pr", "list", "--head", branch, "--state", "open",
+             "--json", "number", "-q", ".[0].number"],
+            repo_root,
+        ).strip()
+        if number and number != "null":
+            lines.append(f"open-pr {number}")
+        return lines
+    return ["tag" if tag_status(repo_root, format_tag(config, v)) == "absent" else "released"]
+
+
+def cmd_tag_status(args: argparse.Namespace, repo_root: Path, config: dict) -> int:
+    _require_semver(args.version)
+    print(tag_status(repo_root, format_tag(config, args.version)))
+    return 0
+
+
+def cmd_phase(args: argparse.Namespace, repo_root: Path, config: dict) -> int:
+    _require_semver(args.version)
+    print("\n".join(release_phase(repo_root, config, args.version)))
+    return 0
+
+
 def _version_files(config: dict) -> list[VersionFile]:
     return [VersionFile(path=e["path"], match=e["match"]) for e in config["version"]["files"]]
 
@@ -300,6 +366,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     check.add_argument("version")
     check.set_defaults(func=cmd_check_versions)
+
+    tag = sub.add_parser("tag-status", parents=[common], help="absent|local|remote|both")
+    tag.add_argument("version")
+    tag.set_defaults(func=cmd_tag_status)
+
+    phase = sub.add_parser("phase", parents=[common], help="bump|tag|released for V")
+    phase.add_argument("version")
+    phase.set_defaults(func=cmd_phase)
     return parser
 
 
