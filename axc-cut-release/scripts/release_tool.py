@@ -118,6 +118,42 @@ def read_version(repo_root: Path, vf: VersionFile, ref: str | None = None) -> st
     return found.group(1)
 
 
+SEMVER_RE = re.compile(r"^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$")
+KEYWORDS = ("patch", "minor", "major")
+
+
+def next_version(cur: str, arg: str | None) -> str:
+    if arg is not None and arg not in KEYWORDS:
+        if not SEMVER_RE.match(arg):
+            raise ReleaseToolError(
+                f"{arg!r} is not a bump keyword (patch, minor, major) "
+                "or an explicit X.Y.Z[-prerelease] version"
+            )
+        return arg
+    if not SEMVER_RE.match(cur):
+        raise ReleaseToolError(f"current version {cur!r} is not X.Y.Z[-prerelease]")
+    if "-" in cur:
+        raise ReleaseToolError(
+            f"current version {cur} has a prerelease suffix, so a bump is ambiguous; "
+            "pass an explicit version instead"
+        )
+    x, y, z = (int(n) for n in cur.split("."))
+    bump = arg or "patch"
+    if bump == "major":
+        return f"{x + 1}.0.0"
+    if bump == "minor":
+        return f"{x}.{y + 1}.0"
+    return f"{x}.{y}.{z + 1}"
+
+
+def cmd_next(args: argparse.Namespace, repo_root: Path, config: dict) -> int:
+    entry = config["version"]["files"][0]
+    vf = VersionFile(path=entry["path"], match=entry["match"])
+    ref = args.ref or f"origin/{config['mainBranch']}"
+    print(next_version(read_version(repo_root, vf, ref), args.arg))
+    return 0
+
+
 def cmd_current(args: argparse.Namespace, repo_root: Path, config: dict) -> int:
     entry = config["version"]["files"][0]
     vf = VersionFile(path=entry["path"], match=entry["match"])
@@ -135,6 +171,11 @@ def build_parser() -> argparse.ArgumentParser:
     current = sub.add_parser("current", parents=[common], help="print the current version")
     current.add_argument("--ref", default=None, help="read from this git ref")
     current.set_defaults(func=cmd_current)
+
+    nxt = sub.add_parser("next", parents=[common], help="print the next version")
+    nxt.add_argument("arg", nargs="?", default=None, help="patch|minor|major|X.Y.Z")
+    nxt.add_argument("--ref", default=None, help="read from this ref (default origin/<mainBranch>)")
+    nxt.set_defaults(func=cmd_next)
     return parser
 
 
