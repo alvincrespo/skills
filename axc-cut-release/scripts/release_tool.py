@@ -229,6 +229,33 @@ def release_phase(repo_root: Path, config: dict, v: str) -> list[str]:
     return ["tag" if tag_status(repo_root, format_tag(config, v)) == "absent" else "released"]
 
 
+def check_workflow(repo_root: Path, config: dict) -> tuple[list[str], bool]:
+    """Plain substring check of release.workflowChecks against release.workflow."""
+    rel = _require_str(config, "release.workflow")
+    checks = config["release"].get("workflowChecks", [])
+    if not isinstance(checks, list) or not all(isinstance(c, str) and c for c in checks):
+        raise ReleaseToolError(
+            "config key 'release.workflowChecks' must be a list of non-empty strings"
+        )
+    path = repo_root / rel
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        raise ReleaseToolError(f"workflow file not found: {rel}")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise ReleaseToolError(f"cannot read workflow file {rel}: {exc}")
+    lines = [
+        f"✓ {c}" if c in text else f"✗ {c} (not found in {rel})" for c in checks
+    ]
+    return lines, all(c in text for c in checks)
+
+
+def cmd_workflow_checks(args: argparse.Namespace, repo_root: Path, config: dict) -> int:
+    lines, ok = check_workflow(repo_root, config)
+    print("\n".join(lines) if lines else "no release.workflowChecks configured")
+    return 0 if ok else 1
+
+
 def cmd_tag_status(args: argparse.Namespace, repo_root: Path, config: dict) -> int:
     _require_semver(args.version)
     print(tag_status(repo_root, format_tag(config, args.version)))
@@ -393,6 +420,11 @@ def build_parser() -> argparse.ArgumentParser:
     phase = sub.add_parser("phase", parents=[common], help="bump|tag|released for V")
     phase.add_argument("version")
     phase.set_defaults(func=cmd_phase)
+
+    wf = sub.add_parser(
+        "workflow-checks", parents=[common], help="check release.workflowChecks against the workflow"
+    )
+    wf.set_defaults(func=cmd_workflow_checks)
     return parser
 
 

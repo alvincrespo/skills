@@ -536,6 +536,62 @@ class PhaseMultiFileTests(RepoTestCase):
         self.assertEqual(self.phase("0.4.0")[:2], (0, "tag\n"))
 
 
+class WorkflowChecksTests(unittest.TestCase):
+    REPO = REAL_CONFIG.parents[1]
+
+    def setUp(self) -> None:
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
+        self.cfg = json.loads(REAL_CONFIG.read_text())
+        self.cfg_path = self.tmp / "release.json"
+        self.workflow = self.tmp / self.cfg["release"]["workflow"]
+        self.workflow.parent.mkdir(parents=True)
+        shutil.copy(self.REPO / self.cfg["release"]["workflow"], self.workflow)
+
+    def run_cmd(self) -> tuple[int, str, str]:
+        self.cfg_path.write_text(json.dumps(self.cfg))
+        return run_cli(
+            "workflow-checks", "--repo-root", str(self.tmp), "--config", str(self.cfg_path)
+        )
+
+    def test_real_config_and_workflow_pass(self) -> None:
+        code, out, err = self.run_cmd()
+        self.assertEqual((code, err), (0, ""))
+        self.assertEqual(out.count("✓"), len(self.cfg["release"]["workflowChecks"]))
+        self.assertNotIn("✗", out)
+
+    def test_missing_check_exits_1_and_is_marked(self) -> None:
+        self.workflow.write_text(self.workflow.read_text().replace("contents: write", "contents: read"))
+        code, out, _ = self.run_cmd()
+        self.assertEqual(code, 1)
+        self.assertIn("✗ contents: write (not found in .github/workflows/release.yml)", out)
+        self.assertIn("✓ gh release create", out)
+
+    def test_missing_workflow_file_exits_2(self) -> None:
+        self.workflow.unlink()
+        code, out, err = self.run_cmd()
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn(".github/workflows/release.yml", err)
+
+    def test_missing_workflow_key_exits_2_naming_it(self) -> None:
+        del self.cfg["release"]["workflow"]
+        code, _, err = self.run_cmd()
+        self.assertEqual(code, 2)
+        self.assertIn("release.workflow", err)
+
+    def test_no_checks_configured_passes_with_notice(self) -> None:
+        del self.cfg["release"]["workflowChecks"]
+        code, out, _ = self.run_cmd()
+        self.assertEqual(code, 0)
+        self.assertIn("no release.workflowChecks", out)
+
+    def test_bad_checks_type_exits_2(self) -> None:
+        self.cfg["release"]["workflowChecks"] = ["ok", 5]
+        code, _, err = self.run_cmd()
+        self.assertEqual(code, 2)
+        self.assertIn("release.workflowChecks", err)
+
+
 class VersionRegexTests(unittest.TestCase):
     def test_captures_prerelease(self) -> None:
         m = release_tool.version_regex('"version": "{V}"').search('"version": "1.2.3-rc.1"')
