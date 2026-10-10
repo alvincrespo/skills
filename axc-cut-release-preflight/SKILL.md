@@ -18,8 +18,20 @@ Read `.claude/release.json` first (Read tool). If missing, auto-detect (`package
 
 ## Argument
 
-Optional version arg (e.g. `0.2.1`). If omitted, read the version from `version.files[0]` (via its
-`match`) and confirm with the user that's the release they're planning.
+Optional version arg (e.g. `0.2.1`). If omitted, take it from `release_tool.py current` (the version
+in `version.files[0]`) and confirm with the user that's the release they're planning.
+
+## The helper script
+
+Checks 1 (tag), 2 (version files) and 3 (workflow) below call `release_tool.py`, which lives in the
+router skill next to this one. All the subcommands used here are read-only:
+
+```bash
+python3 "${CLAUDE_SKILL_DIR}/../axc-cut-release/scripts/release_tool.py" <subcommand> [args]
+```
+
+Run it from the repo being released. Exit `0` = pass, `1` = a check failed, `2` = bad input or config
+(message on stderr). Report exit `2` as a hard block with the message, not as a crash.
 
 ## Checks (run all, report each, don't stop on failure)
 
@@ -32,27 +44,29 @@ explanation. End with an overall verdict.
 - **On `mainBranch`** — `git rev-parse --abbrev-ref HEAD` == `mainBranch`.
 - **Up to date with origin** — `git fetch origin <mainBranch>` then compare `git rev-parse <mainBranch>`
   to `git rev-parse origin/<mainBranch>`.
-- **Tag for this version does not exist** — neither locally (`git tag -l <version-tag>`) nor on origin
-  (`git ls-remote --tags origin <version-tag>`), using `release.tagFormat`. If it exists, that's a
-  hard block — retagging is a separate destructive op the user must explicitly authorize.
+- **Tag for this version does not exist** — `release_tool.py tag-status <V>` prints `absent`, `local`,
+  `remote` or `both` (tag name from `release.tagFormat`). Anything but `absent` is a hard block, and
+  the report should cite the tag and where it exists — retagging is a separate destructive op the user
+  must explicitly authorize.
 
 ### 2. Version source
 
-- **Each `version.files[]` matches the arg** — extract the literal from every file using its `match`;
-  if the user passed a version, each should equal it. Mismatch means the bump didn't land or the wrong
-  arg was passed.
-- **The version files agree with each other** — when there are 2+ `version.files[]`, every literal
-  must be identical (e.g. a source constant and its test assertion). A desync is a hard block — the
-  build/test will fail in CI.
+- **Every `version.files[]` equals the version, and they agree with each other** —
+  `release_tool.py check-versions <V>` prints `✓ <path> = <found>` or `✗ <path> = <found> (expected V)`
+  per file, plus a `files disagree` line if they differ from one another. Exit `1` is a hard block: the
+  bump didn't land, the wrong version was passed, or the files are desynced (the build/test will fail in
+  CI). Use its lines as this section's ✓/✗ entries.
 - **`repo` matches the GitHub remote** — read `git config --get remote.origin.url` (normalize
   SSH↔HTTPS) and compare to `repo`. Mismatch is a warning (fork/rename).
 
 ### 3. Release workflow (`release.workflow`)
 
-Open the workflow file and verify **each** string in `release.workflowChecks[]` — these are the
-per-tech assertions the repo declared (OIDC/provenance for npm, `contents: write` + `action-gh-release`
-for GitHub Releases, etc.). Report one ✓/✗ per entry. A failed required check is a hard block; phrase
-each failure with the exact value found vs. expected so the user can act without re-investigating.
+`release_tool.py workflow-checks` verifies **each** string in `release.workflowChecks[]` against the
+`release.workflow` file — the per-tech assertions the repo declared (OIDC/provenance for npm,
+`contents: write` + `action-gh-release` for GitHub Releases, etc.) — and prints one
+`✓ <string>` or `✗ <string> (not found in <path>)` per entry; use those as this section's lines. Exit `1`
+(any ✗) or `2` (workflow file missing) is a hard block; say which string is missing and what the
+workflow should contain so the user can act without re-investigating.
 
 ### 4. Local build
 
@@ -91,8 +105,5 @@ End with one of:
 ## Implementation hints
 
 - Run independent checks in parallel where possible (multiple Bash calls in one message).
-- Extract a version from a file by turning its `match` into a regex (the `{V}` placeholder becomes the
-  capture group); compare across files for the sync check.
 - For SSH↔HTTPS normalization: strip `git@github.com:` prefix and `.git` suffix, prepend
   `https://github.com/`, then compare to `repo`.
-- For YAML parsing of the workflow: `python3 -c "import yaml; ..."` or read-and-grep — both fine.
