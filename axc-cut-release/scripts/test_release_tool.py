@@ -386,6 +386,156 @@ class BumpTests(RepoTestCase):
         self.assertIn("bumpCommand", err)
 
 
+class TagStatusTests(RepoTestCase):
+    def cli(self, *argv: str) -> tuple[int, str, str]:
+        return run_cli(*argv, "--repo-root", str(self.repo))
+
+    def test_absent_local_remote_both(self) -> None:
+        self.assertEqual(self.cli("tag-status", "0.3.0")[:2], (0, "absent\n"))
+        run_git(self.repo, "tag", "v0.3.0")
+        self.assertEqual(self.cli("tag-status", "0.3.0")[:2], (0, "local\n"))
+        run_git(self.repo, "push", "origin", "v0.3.0")
+        self.assertEqual(self.cli("tag-status", "0.3.0")[:2], (0, "both\n"))
+        run_git(self.repo, "tag", "-d", "v0.3.0")
+        self.assertEqual(self.cli("tag-status", "0.3.0")[:2], (0, "remote\n"))
+
+    def test_tag_only_on_origin_reports_remote(self) -> None:
+        run_git(self.repo, "tag", "v0.4.0")
+        run_git(self.repo, "push", "origin", "v0.4.0")
+        run_git(self.repo, "tag", "-d", "v0.4.0")
+        self.assertEqual(self.cli("tag-status", "0.4.0")[:2], (0, "remote\n"))
+
+    def test_annotated_tag_on_origin(self) -> None:
+        run_git(self.repo, "tag", "-a", "v0.5.0", "-m", "x")
+        run_git(self.repo, "push", "origin", "v0.5.0")
+        self.assertEqual(self.cli("tag-status", "0.5.0")[:2], (0, "both\n"))
+
+    def test_namespaced_tag_does_not_match(self) -> None:
+        run_git(self.repo, "tag", "pre/v0.3.0")
+        run_git(self.repo, "push", "origin", "pre/v0.3.0")
+        self.assertEqual(self.cli("tag-status", "0.3.0")[:2], (0, "absent\n"))
+
+    def test_bad_version_exits_2(self) -> None:
+        self.assertEqual(self.cli("tag-status", "banana")[0], 2)
+
+
+class PhaseTests(RepoTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        self.plugin.write_text('{\n  "version": "0.4.0"\n}\n')
+        run_git(self.repo, "commit", "-qam", "bump")
+        run_git(self.repo, "push", "origin", "main")
+
+    def phase(self, v: str, gh_result: str = "") -> tuple[int, str, str]:
+        from unittest import mock
+        with mock.patch.object(release_tool, "gh", return_value=gh_result) as m:
+            result = run_cli("phase", v, "--repo-root", str(self.repo))
+        self.gh_calls = m.call_args_list
+        return result
+
+    def test_tag_then_released_then_bump(self) -> None:
+        self.assertEqual(self.phase("0.4.0")[:2], (0, "tag\n"))
+        run_git(self.repo, "tag", "v0.4.0")
+        self.assertEqual(self.phase("0.4.0")[:2], (0, "released\n"))
+        run_git(self.repo, "push", "origin", "v0.4.0")
+        run_git(self.repo, "tag", "-d", "v0.4.0")
+        self.assertEqual(self.phase("0.4.0")[:2], (0, "released\n"))
+        self.assertEqual(self.phase("0.5.0")[:2], (0, "bump\n"))
+
+    def test_bump_with_open_pr(self) -> None:
+        code, out, _ = self.phase("0.5.0", gh_result="63\n")
+        self.assertEqual((code, out), (0, "bump\nopen-pr 63\n"))
+        args = self.gh_calls[0].args[0]
+        self.assertEqual(args[args.index("--head") + 1], "release/v0.5.0")
+
+    def test_gh_not_called_when_version_is_on_main(self) -> None:
+        self.phase("0.4.0")
+        self.assertEqual(self.gh_calls, [])
+
+    def test_phase_fetches_origin_main(self) -> None:
+        # Advance origin/main from a second clone; phase must see it without a manual fetch.
+        other = self.repo.parent / "other"
+        subprocess.run(["git", "clone", "-q", str(self.origin), str(other)], check=True)
+        run_git(other, "config", "user.email", "t@example.com")
+        run_git(other, "config", "user.name", "Test")
+        (other / "pkg" / "version.json").write_text('{\n  "version": "0.5.0"\n}\n')
+        run_git(other, "commit", "-qam", "bump 0.5.0")
+        run_git(other, "push", "origin", "main")
+        self.assertEqual(self.phase("0.5.0")[:2], (0, "tag\n"))
+
+    def test_junk_gh_output_is_not_reported_as_a_pr(self) -> None:
+        for junk in ("null", "abc", "6 3", ""):
+            with self.subTest(junk=junk):
+                self.assertEqual(self.phase("0.5.0", gh_result=junk)[:2], (0, "bump\n"))
+
+    def test_local_only_tag_counts_as_released(self) -> None:
+        # Spec: any existing tag (local, remote or both) means released.
+        run_git(self.repo, "tag", "v0.4.0")
+        self.assertEqual(release_tool.tag_status(self.repo, "v0.4.0"), "local")
+        self.assertEqual(self.phase("0.4.0")[:2], (0, "released\n"))
+
+    def test_version_older_than_main_exits_2_without_calling_gh(self) -> None:
+        code, out, err = self.phase("0.3.9")
+        self.assertEqual((code, out), (2, ""))
+        self.assertIn("older than", err)
+        self.assertEqual(self.gh_calls, [])
+
+    def test_prerelease_of_current_main_triple_is_bump(self) -> None:
+        self.assertEqual(self.phase("0.4.0-rc.1")[:2], (0, "bump\n"))
+
+    def test_unreachable_origin_exits_2_with_hint(self) -> None:
+        run_git(self.repo, "remote", "set-url", "origin", str(self.repo.parent / "gone.git"))
+        code, _, err = self.phase("0.4.0")
+        self.assertEqual(code, 2)
+        self.assertIn("'origin' remote", err)
+
+    def test_tag_status_unreachable_origin_exits_2_with_hint(self) -> None:
+        run_git(self.repo, "remote", "set-url", "origin", str(self.repo.parent / "gone.git"))
+        code, _, err = run_cli("tag-status", "0.4.0", "--repo-root", str(self.repo))
+        self.assertEqual(code, 2)
+        self.assertIn("'origin' remote", err)
+
+    def test_gh_failure_exits_2(self) -> None:
+        from unittest import mock
+        err = release_tool.ReleaseToolError("gh is not installed or not on PATH")
+        with mock.patch.object(release_tool, "gh", side_effect=err):
+            code, _, stderr = run_cli("phase", "0.5.0", "--repo-root", str(self.repo))
+        self.assertEqual(code, 2)
+        self.assertIn("gh", stderr)
+
+
+class PhaseMultiFileTests(RepoTestCase):
+    def setUp(self) -> None:
+        super().setUp()
+        cfg = json.loads(json.dumps(FIXTURE_CONFIG))
+        cfg["version"]["files"].append({"path": "version.go", "match": 'Version = "{V}"'})
+        (self.repo / ".claude" / "release.json").write_text(json.dumps(cfg))
+        (self.repo / "version.go").write_text('const Version = "0.3.0"\n')
+        run_git(self.repo, "add", "-A")
+        run_git(self.repo, "commit", "-qm", "two files")
+        run_git(self.repo, "push", "origin", "main")
+
+    def phase(self, v: str) -> tuple[int, str, str]:
+        from unittest import mock
+        with mock.patch.object(release_tool, "gh", return_value=""):
+            return run_cli("phase", v, "--repo-root", str(self.repo))
+
+    def test_partial_bump_on_main_is_an_error(self) -> None:
+        self.plugin.write_text('{\n  "version": "0.4.0"\n}\n')
+        run_git(self.repo, "commit", "-qam", "half bump")
+        run_git(self.repo, "push", "origin", "main")
+        code, _, err = self.phase("0.4.0")
+        self.assertEqual(code, 2)
+        self.assertIn("version.go=0.3.0", err)
+
+    def test_all_files_on_main_proceeds_to_tag(self) -> None:
+        self.plugin.write_text('{\n  "version": "0.4.0"\n}\n')
+        (self.repo / "version.go").write_text('const Version = "0.4.0"\n')
+        run_git(self.repo, "commit", "-qam", "bump")
+        run_git(self.repo, "push", "origin", "main")
+        self.assertEqual(self.phase("0.4.0")[:2], (0, "tag\n"))
+
+
 class VersionRegexTests(unittest.TestCase):
     def test_captures_prerelease(self) -> None:
         m = release_tool.version_regex('"version": "{V}"').search('"version": "1.2.3-rc.1"')

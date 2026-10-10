@@ -29,19 +29,24 @@ class VersionFile:
     match: str  # contains exactly one "{V}"
 
 
-def git(args: list[str], repo_root: Path) -> str:
+def _run(cmd: list[str], label: str, cwd: Path | None = None) -> str:
+    """Run cmd and return stdout; every failure becomes a ReleaseToolError."""
     try:
         result = subprocess.run(
-            ["git", "-C", str(repo_root), *args],
-            capture_output=True,
-            text=True,
+            cmd, cwd=cwd, capture_output=True, text=True, stdin=subprocess.DEVNULL
         )
+    except FileNotFoundError:
+        raise ReleaseToolError(f"{cmd[0]} is not installed or not on PATH")
     except UnicodeDecodeError as exc:
-        raise ReleaseToolError(f"git {' '.join(args)} produced non-UTF-8 output: {exc}")
+        raise ReleaseToolError(f"{label} produced non-UTF-8 output: {exc}")
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip()
-        raise ReleaseToolError(f"git {' '.join(args)} failed: {detail}")
+        raise ReleaseToolError(f"{label} failed: {detail}")
     return result.stdout
+
+
+def git(args: list[str], repo_root: Path) -> str:
+    return _run(["git", "-C", str(repo_root), *args], f"git {' '.join(args)}")
 
 
 def _require(config: dict, dotted: str):
@@ -154,6 +159,86 @@ def next_version(cur: str, arg: str | None) -> str:
     if bump == "minor":
         return f"{x}.{y + 1}.0"
     return f"{x}.{y}.{z + 1}"
+
+
+def gh(args: list[str], repo_root: Path) -> str:
+    """Run `gh <args>` in repo_root. Kept separate from git() so tests can replace it."""
+    return _run(["gh", *args], f"gh {' '.join(args)}", cwd=repo_root)
+
+
+def _git_origin(args: list[str], repo_root: Path) -> str:
+    """git() for commands that talk to `origin`, with a hint when it can't be reached."""
+    try:
+        return git(args, repo_root)
+    except ReleaseToolError as exc:
+        raise ReleaseToolError(
+            f"{exc} (needs network access to the 'origin' remote)"
+        ) from None
+
+
+def format_tag(config: dict, v: str) -> str:
+    return config["release"]["tagFormat"].replace("{V}", v)
+
+
+def tag_status(repo_root: Path, tag: str) -> str:
+    """One of: absent, local, remote, both."""
+    local = bool(git(["tag", "-l", tag], repo_root).strip())
+    ref = f"refs/tags/{tag}"
+    # ls-remote patterns match on a trailing path, so compare the ref names exactly
+    # (annotated tags also list a peeled `<ref>^{}` line).
+    listed = _git_origin(["ls-remote", "--tags", "origin", ref], repo_root).splitlines()
+    remote = any(
+        line.split("\t")[-1] in (ref, f"{ref}^{{}}") for line in listed if "\t" in line
+    )
+    return {(False, False): "absent", (True, False): "local",
+            (False, True): "remote", (True, True): "both"}[(local, remote)]
+
+
+def _triple(v: str) -> tuple[int, ...]:
+    return tuple(int(n) for n in v.split("-")[0].split("."))
+
+
+def release_phase(repo_root: Path, config: dict, v: str) -> list[str]:
+    main = config["mainBranch"]
+    _git_origin(["fetch", "origin", main], repo_root)
+    files = _version_files(config)
+    on_main = [read_version(repo_root, vf, f"origin/{main}") for vf in files]
+    matches = [found == v for found in on_main]
+    if any(matches) and not all(matches):
+        detail = ", ".join(f"{vf.path}={found}" for vf, found in zip(files, on_main))
+        raise ReleaseToolError(
+            f"{v} is on origin/{main} in some version files but not others ({detail})"
+        )
+    if not any(matches):
+        newest = max(on_main, key=_triple)
+        if _triple(v) < _triple(newest):
+            raise ReleaseToolError(
+                f"{v} is older than the version already on origin/{main} ({newest})"
+            )
+        lines = ["bump"]
+        branch = config["commit"]["branch"].replace("{V}", v)
+        number = gh(
+            ["pr", "list", "--head", branch, "--state", "open",
+             "--json", "number", "-q", ".[0].number"],
+            repo_root,
+        ).strip()
+        if number.isdigit():
+            lines.append(f"open-pr {number}")
+        return lines
+    # Per the spec, any existing tag (local, remote or both) counts as released.
+    return ["tag" if tag_status(repo_root, format_tag(config, v)) == "absent" else "released"]
+
+
+def cmd_tag_status(args: argparse.Namespace, repo_root: Path, config: dict) -> int:
+    _require_semver(args.version)
+    print(tag_status(repo_root, format_tag(config, args.version)))
+    return 0
+
+
+def cmd_phase(args: argparse.Namespace, repo_root: Path, config: dict) -> int:
+    _require_semver(args.version)
+    print("\n".join(release_phase(repo_root, config, args.version)))
+    return 0
 
 
 def _version_files(config: dict) -> list[VersionFile]:
@@ -300,6 +385,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     check.add_argument("version")
     check.set_defaults(func=cmd_check_versions)
+
+    tag = sub.add_parser("tag-status", parents=[common], help="absent|local|remote|both")
+    tag.add_argument("version")
+    tag.set_defaults(func=cmd_tag_status)
+
+    phase = sub.add_parser("phase", parents=[common], help="bump|tag|released for V")
+    phase.add_argument("version")
+    phase.set_defaults(func=cmd_phase)
     return parser
 
 
