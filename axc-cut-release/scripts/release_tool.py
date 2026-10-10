@@ -237,17 +237,19 @@ def check_workflow(repo_root: Path, config: dict) -> tuple[list[str], bool]:
         raise ReleaseToolError(
             "config key 'release.workflowChecks' must be a list of non-empty strings"
         )
-    path = repo_root / rel
+    root = repo_root.resolve()
+    path = (root / rel).resolve()
+    if not path.is_relative_to(root):
+        raise ReleaseToolError(f"release.workflow {rel!r} must stay inside the repo")
     try:
         text = path.read_text(encoding="utf-8")
     except FileNotFoundError:
         raise ReleaseToolError(f"workflow file not found: {rel}")
     except (OSError, UnicodeDecodeError) as exc:
         raise ReleaseToolError(f"cannot read workflow file {rel}: {exc}")
-    lines = [
-        f"✓ {c}" if c in text else f"✗ {c} (not found in {rel})" for c in checks
-    ]
-    return lines, all(c in text for c in checks)
+    found = [(c, c in text) for c in checks]
+    lines = [f"✓ {c}" if ok else f"✗ {c} (not found in {rel})" for c, ok in found]
+    return lines, all(ok for _, ok in found)
 
 
 def cmd_workflow_checks(args: argparse.Namespace, repo_root: Path, config: dict) -> int:
@@ -429,6 +431,9 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    # ✓/✗ must not crash under LANG=C or an ascii PYTHONIOENCODING.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(errors="backslashreplace")
     args = build_parser().parse_args(argv)
     repo_root = (args.repo_root or Path.cwd()).resolve()
     config_path = args.config or repo_root / ".claude" / "release.json"
