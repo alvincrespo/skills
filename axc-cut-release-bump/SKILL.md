@@ -29,17 +29,22 @@ first — this skill won't sweep unrelated changes into a release branch.
 
 1. `git fetch origin <mainBranch>`, then branch off it (substitute `{V}` in `commit.branch`):
    `git checkout -b <commit.branch> origin/<mainBranch>`
-2. Bump the version:
-   - If `version.bumpCommand` is set → run it with `{V}` substituted (e.g.
-     `npm version 0.3.0 --no-git-tag-version`). This also updates any lockfile.
-   - Otherwise → for **each** entry in `version.files[]`, edit `path` so the version inside its
-     `match` pattern becomes `V`. Keep all listed files in sync (e.g. a source literal **and** its
-     test assertion) — skipping one will break `checks.test`. Change only the version literal; don't
-     reformat the file.
+2. Bump the version with the router's helper script, then verify it:
+   ```bash
+   python3 "${CLAUDE_SKILL_DIR}/../axc-cut-release/scripts/release_tool.py" bump <V>
+   python3 "${CLAUDE_SKILL_DIR}/../axc-cut-release/scripts/release_tool.py" check-versions <V>
+   ```
+   `bump` rewrites only the version literal in **every** `version.files[]` entry (or, if
+   `version.bumpCommand` is set, runs that command instead and verifies the result — this also covers
+   any lockfile it updates). If a file's `match` pattern isn't found it exits `2` having written
+   nothing. `check-versions` must exit `0`, every file `✓`; on anything else, stop and report the
+   output. Don't hand-edit the files to get past a failure.
 3. Sanity-check before committing: run `checks.build` and `checks.test` (and a formatter check if the
    stack has one, e.g. `gofmt -l <dir>` or `npm run format -- --check`). If they fail, stop and report.
 4. Commit (substitute `{V}` in `commit.title`):
    `git commit -am "<commit.title>"`
+   - If the session's instructions ask for a commit trailer (such as `Co-Authored-By:`), add it to this
+     commit message too — the title above is the subject line, not the whole message.
 5. Push and open the PR:
    `git push -u origin <commit.branch>`
    `gh pr create --base <mainBranch> --head <commit.branch> --title "<commit.title>" --body "<body>"`
