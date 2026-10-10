@@ -53,7 +53,9 @@ python3 "${CLAUDE_SKILL_DIR}/scripts/release_tool.py" <subcommand> [args]
 ```
 
 Exit `0` = ok, `1` = a check failed, `2` = bad input or config (message on stderr). On exit `2`, stop
-and show the user the message — don't work around it. Don't recompute versions or phases by hand.
+and show the user the message — don't work around it — except for the one case spelled out under
+"Resolve target version" (a keyword refused because the current version is a prerelease), where you
+ask for an explicit version instead. Don't recompute versions or phases by hand.
 
 ## Resolve target version `V`
 
@@ -65,19 +67,27 @@ and show the user the message — don't work around it. Don't recompute versions
    - **No arg** → `release_tool.py current --ref origin/<mainBranch>` prints `cur`, then
      `release_tool.py tag-status <cur>`:
      - `absent` → the user likely wants to tag the already-merged version: propose `V = cur`.
-     - anything else → propose `V = ` the output of `release_tool.py next` (a patch bump) and
-       **confirm with the user before proceeding**.
+     - `local` → the tag exists only in this clone and was never pushed, so `cur` isn't released.
+       Tell the user: they can push it, or delete it (`git tag -d <tag>`) and re-run. Don't do either
+       for them, and don't bump past it.
+     - `remote` or `both` → `cur` is already released: propose `V = ` the output of
+       `release_tool.py next` (a patch bump) and **confirm with the user before proceeding**.
 
 ## Phase detection
 
 Run `release_tool.py phase <V>` (it fetches `origin/<mainBranch>` itself). Its first line is one of:
 
 - **`tag`** → the bump is already on `main` and the tag doesn't exist. Route to **Phase 2**.
-- **`released`** → the tag already exists (local or origin), so this version is released. Stop and say
-  so (retagging is a separate, destructive op, out of scope).
+- **`released`** → a tag for `V` already exists. Run `release_tool.py tag-status <V>` to see where:
+  - `remote` or `both` → released. Stop and say so (retagging is a separate, destructive op, out of
+    scope).
+  - `local` → it was never pushed, so nothing was published. Stop and say that: the user can push the
+    tag, or delete it (`git tag -d <tag>`) and re-run. Don't do either for them.
 - **`bump`** → the bump isn't on `main` yet. Route to **Phase 1**. If a second line `open-pr <N>`
   follows, a release PR is already open: tell the user to merge PR `N`, then re-run to tag. Don't open
-  a duplicate.
+  a duplicate. If stderr instead says `warning: could not check for an open release PR`, the lookup
+  failed (for example `gh` isn't installed or logged in): tell the user, and ask whether a release PR
+  for the branch is already open before routing to Phase 1.
 
 State the resolved version, the detected phase, and what will happen, before routing.
 
