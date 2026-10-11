@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -32,6 +33,15 @@ AUTOMATION_NOTE = (
 ALLOWED_TOOLS = (
     "Bash(git:*)", "Bash(gh:*)", "Bash(python3:*)", "Bash(test:*)", "Bash(ls:*)",
     "Bash(cat:*)", "Read", "Glob", "Grep", "Skill",
+)
+
+# Tool errors that are expected given how the throwaway project is built, so the summary
+# doesn't list them as problems.
+EXPECTED_TOOL_ERRORS = (
+    # The tag skill's last step runs `gh run list --workflow=release.yml`. The project's workflow
+    # is ci/release.yml, outside .github/ on purpose (so a tag push runs nothing), which GitHub
+    # reports as a 404.
+    re.compile(r"workflow release\.yml not found on the default branch"),
 )
 
 # Exit codes

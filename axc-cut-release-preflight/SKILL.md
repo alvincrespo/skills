@@ -37,6 +37,10 @@ Run each `release_tool.py` call as its own command with the full path shown here
 the path to a shell variable (`T=…; python3 $T …`): Claude Code can't check a command that
 expands a variable before it runs, so it blocks it or prompts the user.
 
+Run the checks as separate commands, and don't append `; echo "exit $?"` to read an exit code: the
+Bash tool already reports a non-zero exit, and the extra `echo` is a second operation that needs its
+own approval.
+
 ## Checks (run all, report each, don't stop on failure)
 
 Group results into four sections. For each check, print a single line `✓` or `✗` plus a one-line

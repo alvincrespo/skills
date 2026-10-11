@@ -6,11 +6,11 @@ import json
 import subprocess
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import shell
-from .config import ALLOWED_TOOLS, AUTOMATION_NOTE, Options
+from .config import ALLOWED_TOOLS, AUTOMATION_NOTE, EXPECTED_TOOL_ERRORS, Options
 from .log import Logger
 
 
@@ -21,6 +21,7 @@ class Session:
     is_error: bool | None
     cost_usd: float
     final_text: str
+    tool_errors: tuple[str, ...] = ()   # results of tool calls that failed, e.g. a denied command
 
     @property
     def finished_cleanly(self) -> bool:
@@ -33,6 +34,22 @@ class _StreamSummary:
     cost: float | None = None
     is_error: bool | None = None
     subtype: str | None = None
+    tool_errors: list[str] = field(default_factory=list)
+
+
+def tool_result_text(item: dict) -> str:
+    """The text of a tool_result block, whether `content` is a string or a list of parts."""
+    content = item.get("content", "")
+    if isinstance(content, list):
+        content = " ".join(p.get("text", "") for p in content if isinstance(p, dict))
+    return " ".join(str(content).split())
+
+
+def split_tool_errors(errors: tuple[str, ...] | list[str]) -> tuple[list[str], list[str]]:
+    """(expected, unexpected): `expected` match a pattern in EXPECTED_TOOL_ERRORS."""
+    expected = [e for e in errors if any(p.search(e) for p in EXPECTED_TOOL_ERRORS)]
+    unexpected = [e for e in errors if e not in expected]
+    return expected, unexpected
 
 
 class ClaudeRunner:
@@ -92,7 +109,8 @@ class ClaudeRunner:
         self.log.info(f"    finished in {time.time() - started:.0f}s, exit {code}, "
                       f"{summary.subtype or 'no result event'}, "
                       f"cost ${summary.cost if summary.cost is not None else '?'}")
-        return Session(code, timed_out.is_set(), summary.is_error, cost, summary.final_text)
+        return Session(code, timed_out.is_set(), summary.is_error, cost, summary.final_text,
+                       tuple(summary.tool_errors))
 
     def _follow(self, proc: subprocess.Popen, label: str) -> _StreamSummary:
         """Read claude's stream-json, saving it and logging progress."""
@@ -115,6 +133,13 @@ class ClaudeRunner:
                     self.log.info(f"    agent -> {item.get('name')}: {str(what)[:200]}")
                 elif item.get("type") == "text":
                     self.log.info(f"    agent says: {' '.join(item['text'].split())[:240]}")
+        elif event.get("type") == "user":
+            content = event.get("message", {}).get("content", [])
+            for item in content if isinstance(content, list) else []:
+                if isinstance(item, dict) and item.get("type") == "tool_result" and item.get("is_error"):
+                    text = tool_result_text(item)
+                    summary.tool_errors.append(text)
+                    self.log.info(f"    tool error: {text[:200]}")
         elif event.get("type") == "result":
             summary.final_text = event.get("result", "") or ""
             summary.cost = event.get("total_cost_usd")

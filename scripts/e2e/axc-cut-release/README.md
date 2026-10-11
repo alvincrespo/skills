@@ -4,9 +4,16 @@ Runs the release skills for real, in a throwaway **private GitHub repo** on your
 checks the repo ends up in the right state. It drives real headless Claude sessions, so it costs
 tokens. Run it by hand before releasing a change to the release skills; it is not meant for CI.
 
+Check the environment and print the plan, creating nothing:
+
 ```bash
-python3 scripts/e2e/axc-cut-release/run.py --dry-run   # check the environment, create nothing
-python3 scripts/e2e/axc-cut-release/run.py             # the full run
+python3 scripts/e2e/axc-cut-release/run.py --dry-run
+```
+
+The full run:
+
+```bash
+python3 scripts/e2e/axc-cut-release/run.py
 ```
 
 Needs `git`, `gh` and `claude`, all logged in, and the `delete_repo` scope on the `gh` token
@@ -35,6 +42,14 @@ aborted (setup failed, or a git/gh call errored mid-test), `130` interrupted.
    human does); `/axc-cut-release 0.1.1` should push the tag. Each stage checks the repo's state.
 3. **Tear down**, even on failure or Ctrl-C: deletes the folder and the GitHub repo. Logs stay in
    `tmp/e2e-logs/<run>/` (the prompt, raw stream and final message of each session, plus `run.log`).
+
+The result also lists **tool errors**: tool calls the agent had refused or that failed, per
+session. They are friction the agent works around (a denied command is retried), not failures, so
+they never change the pass/fail outcome. Real problems are grouped with a repeat count; errors that
+are expected given how the project is built (the 404 for `gh run list --workflow=release.yml`,
+because the workflow is at `ci/release.yml`) are counted but not listed. Add to
+`EXPECTED_TOOL_ERRORS` in `harness/config.py` when a new expected one appears. The full stream is
+in `tmp/e2e-logs/<run>/<phase>.stream.jsonl`.
 
 If a run is killed hard (power loss, `kill -9`) a repo can be left behind. They are all named
 `axc-cut-release-e2e-*`; delete one with `gh repo delete <you>/<name> --yes`.

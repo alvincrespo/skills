@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import signal
+from collections import Counter
 
 from . import preflight
 from .config import (BASE_VERSION, EXIT_ABORTED, EXIT_CHECKS_FAILED, EXIT_INTERRUPTED, EXIT_OK,
                      NAME_PREFIX, NEXT_VERSION, TAG, Options, Paths)
+from .claude_runner import split_tool_errors
 from .context import RunContext
 from .errors import HarnessError
 from .github import GitHub
@@ -48,6 +50,26 @@ def print_plan(ctx: RunContext) -> None:
     log.info(f"  Two Claude sessions, each capped at ${ctx.options.max_budget_usd}.")
 
 
+def tool_error_lines(ctx: RunContext) -> list[str]:
+    """Tool calls the agent had refused or that failed. Friction, not failures: a check
+    decides pass/fail, and the agent normally works around these."""
+    if not ctx.tool_errors:
+        return []
+    parts, details = [], []
+    for label, errors in ctx.tool_errors.items():
+        expected, unexpected = split_tool_errors(errors)
+        if not errors:
+            parts.append(f"{label} none")
+            continue
+        parts.append(f"{label} {len(errors)} ({len(expected)} expected, {len(unexpected)} unexpected)")
+        for message, count in Counter(unexpected).items():
+            details.append(f"    {label}: {message[:160]}" + (f"  (x{count})" if count > 1 else ""))
+    lines = ["  tool errors: " + "; ".join(parts)]
+    if details:
+        lines += details + ["    (not failures: the agent works around these; see the stream logs)"]
+    return lines
+
+
 def summarize(ctx: RunContext) -> int:
     log, report = ctx.log, ctx.report
     log.step("Result")
@@ -60,6 +82,8 @@ def summarize(ctx: RunContext) -> int:
     if ctx.session_costs:
         costs = ", ".join(f"{k} ${v:.2f}" for k, v in ctx.session_costs.items())
         log.info(f"  agent cost: {costs} (total ${sum(ctx.session_costs.values()):.2f})")
+    for line in tool_error_lines(ctx):
+        log.info(line)
     if ctx.name:
         log.info(f"  logs: {ctx.logs_dir}")
     return EXIT_OK if not report.failed and ctx.teardown_ok else EXIT_CHECKS_FAILED

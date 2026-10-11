@@ -108,6 +108,7 @@ class ReleaseScenario:
 
     def _record_session(self, phase: str, label: str, session: Session) -> None:
         self.ctx.session_costs[label] = session.cost_usd
+        self.ctx.tool_errors[label] = session.tool_errors
         self.report.check(
             f"{phase}: the Claude session finished", session.finished_cleanly,
             f"exit {session.exit_code}, timed out: {session.timed_out}, "

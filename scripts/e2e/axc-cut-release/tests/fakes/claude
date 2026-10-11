@@ -5,6 +5,8 @@ project's real release_tool.py, so the harness's setup, checks and teardown run 
 FAKE_STATE (required) is the same directory the fake gh uses. FAKE_CLAUDE_MODE selects:
   ok            do the work               no-tag-push  phase 2 forgets to push the tag
   fail          exit 1 with is_error      interrupt    send SIGINT to the parent, then hang
+FAKE_CLAUDE_TOOL_ERRORS=1 also reports three failed tool calls: two permission denials and the
+404 the real tag skill hits for `gh run list --workflow=release.yml`.
 """
 import json
 import os
@@ -25,6 +27,18 @@ def sh(*cmd):
 def say(text):
     print(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}),
           flush=True)
+
+
+def tool_errors():
+    denial = "This Bash command contains multiple operations. The following part requires approval: echo"
+    not_found = "Exit code 1\nHTTP 404: workflow release.yml not found on the default branch"
+    blocks = [
+        {"type": "tool_result", "is_error": True, "content": denial},
+        {"type": "tool_result", "is_error": True, "content": [{"type": "text", "text": denial}]},
+        {"type": "tool_result", "is_error": True, "content": not_found},
+        {"type": "tool_result", "is_error": False, "content": "fine"},
+    ]
+    print(json.dumps({"type": "user", "message": {"role": "user", "content": blocks}}), flush=True)
 
 
 def result(is_error=False):
@@ -70,6 +84,8 @@ def main():
         os.kill(os.getppid(), signal.SIGINT)
         time.sleep(60)
         return 0
+    if os.environ.get("FAKE_CLAUDE_TOOL_ERRORS"):
+        tool_errors()
     sh("git", "fetch", "-q", "origin", "main")
     if first == "/axc-cut-release patch":
         phase1()

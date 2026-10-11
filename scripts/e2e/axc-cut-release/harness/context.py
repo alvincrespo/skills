@@ -22,6 +22,7 @@ class RunContext:
     name: str = ""                      # set by the sandbox
     created_repo: str | None = None     # "owner/name"; set only once GitHub confirms it exists
     session_costs: dict[str, float] = field(default_factory=dict)
+    tool_errors: dict[str, tuple[str, ...]] = field(default_factory=dict)
     aborted: str = ""                   # why the run stopped early, if it did
     teardown_ok: bool = True
 

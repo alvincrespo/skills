@@ -27,7 +27,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from harness import cli  # noqa: E402
-from harness.claude_runner import ClaudeRunner  # noqa: E402
+from harness.claude_runner import ClaudeRunner, split_tool_errors, tool_result_text  # noqa: E402
 from harness.config import (EXIT_ABORTED, EXIT_CHECKS_FAILED, EXIT_INTERRUPTED, EXIT_OK,  # noqa: E402
                             NAME_PREFIX, SKILLS, Options, Paths)
 from harness.context import RunContext  # noqa: E402
@@ -172,6 +172,26 @@ class FullRunTests(HarnessCase):
         self.assertIn("teardown INCOMPLETE", out)
 
 
+class ToolErrorTests(HarnessCase):
+    def test_a_clean_session_reports_none(self) -> None:
+        rc, out = self.run_harness()
+        self.assertEqual(rc, EXIT_OK, out)
+        self.assertIn("tool errors: phase1-bump none; phase2-tag none", out)
+
+    def test_tool_errors_are_summarised_but_do_not_fail_the_run(self) -> None:
+        self.set_env(FAKE_CLAUDE_TOOL_ERRORS="1")
+        rc, out = self.run_harness()
+        self.assertEqual(rc, EXIT_OK, out)
+        self.assertIn("tool errors: phase1-bump 3 (1 expected, 2 unexpected); "
+                      "phase2-tag 3 (1 expected, 2 unexpected)", out)
+        # identical messages are grouped, and the expected 404 is not listed as a problem
+        self.assertIn("phase1-bump: This Bash command contains multiple operations", out)
+        self.assertIn("(x2)", out)
+        self.assertNotIn("phase1-bump: Exit code 1", out)
+        self.assertIn("not failures", out)
+        self.assert_nothing_left_behind()
+
+
 class PreflightTests(HarnessCase):
     def test_dry_run_creates_nothing(self) -> None:
         rc, out = self.run_harness("--dry-run")
@@ -257,6 +277,17 @@ class UnitTests(unittest.TestCase):
     def test_the_default_paths_point_at_a_checkout_with_the_skills(self) -> None:
         for skill in SKILLS:
             self.assertTrue((REAL_REPO / skill / "SKILL.md").is_file(), skill)
+
+    def test_tool_result_text_handles_strings_and_part_lists(self) -> None:
+        self.assertEqual(tool_result_text({"content": "a\n b"}), "a b")
+        self.assertEqual(tool_result_text({"content": [{"type": "text", "text": "x"},
+                                                       {"type": "text", "text": "y"}]}), "x y")
+        self.assertEqual(tool_result_text({}), "")
+
+    def test_the_release_yml_404_is_expected_and_other_errors_are_not(self) -> None:
+        not_found = "HTTP 404: workflow release.yml not found on the default branch"
+        expected, unexpected = split_tool_errors([not_found, "Exit code 2"])
+        self.assertEqual((expected, unexpected), ([not_found], ["Exit code 2"]))
 
     def test_claude_command_isolates_settings_and_caps_spend(self) -> None:
         cmd = ClaudeRunner(Options(model="m", max_budget_usd=1.5), Logger(), Path(".")).command("p")
