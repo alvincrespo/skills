@@ -34,6 +34,9 @@ first — this skill won't sweep unrelated changes into a release branch.
    python3 "${CLAUDE_SKILL_DIR}/../axc-cut-release/scripts/release_tool.py" bump <V>
    python3 "${CLAUDE_SKILL_DIR}/../axc-cut-release/scripts/release_tool.py" check-versions <V>
    ```
+   Run each call as its own command with the full path above. Don't assign the path to a shell
+   variable (`T=…; python3 $T …`): Claude Code can't check a command that expands a variable before
+   it runs, so it blocks it or prompts the user.
    `bump` rewrites only the version literal in **every** `version.files[]` entry (or, if
    `version.bumpCommand` is set, runs that command instead and verifies the result — this also covers
    any lockfile it updates). If a file's `match` pattern isn't found it exits `2` having written

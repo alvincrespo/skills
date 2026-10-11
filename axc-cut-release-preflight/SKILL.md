@@ -33,6 +33,10 @@ python3 "${CLAUDE_SKILL_DIR}/../axc-cut-release/scripts/release_tool.py" <subcom
 Run it from the repo being released. Exit `0` = pass, `1` = a check failed, `2` = bad input or config
 (message on stderr). Report exit `2` as a hard block with the message, not as a crash.
 
+Run each `release_tool.py` call as its own command with the full path shown here. Don't assign
+the path to a shell variable (`T=…; python3 $T …`): Claude Code can't check a command that
+expands a variable before it runs, so it blocks it or prompts the user.
+
 ## Checks (run all, report each, don't stop on failure)
 
 Group results into four sections. For each check, print a single line `✓` or `✗` plus a one-line
