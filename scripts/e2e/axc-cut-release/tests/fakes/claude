@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Stand-in for headless `claude -p`. It performs what the release skills should do, using the
+project's real release_tool.py, so the harness's setup, checks and teardown run for real.
+
+FAKE_STATE (required) is the same directory the fake gh uses. FAKE_CLAUDE_MODE selects:
+  ok            do the work               no-tag-push  phase 2 forgets to push the tag
+  fail          exit 1 with is_error      interrupt    send SIGINT to the parent, then hang
+"""
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+
+STATE = os.environ["FAKE_STATE"]
+MODE = os.environ.get("FAKE_CLAUDE_MODE", "ok")
+TOOL = ".claude/skills/axc-cut-release/scripts/release_tool.py"
+
+
+def sh(*cmd):
+    return subprocess.run(cmd, capture_output=True, text=True, check=True).stdout.strip()
+
+
+def say(text):
+    print(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}),
+          flush=True)
+
+
+def result(is_error=False):
+    print(json.dumps({"type": "result", "subtype": "error" if is_error else "success",
+                      "is_error": is_error, "total_cost_usd": 0.01, "result": "done"}), flush=True)
+
+
+def phase1():
+    version = sh("python3", TOOL, "next", "patch")
+    say(f"next={version} phase={sh('python3', TOOL, 'phase', version)}")
+    sh("git", "checkout", "-q", "-b", f"release/v{version}", "origin/main")
+    sh("python3", TOOL, "bump", version)
+    sh("python3", TOOL, "check-versions", version)
+    sh("git", "commit", "-q", "-am", f"release: v{version}")
+    sh("git", "push", "-q", "-u", "origin", f"release/v{version}")
+    path = f"{STATE}/prs.json"
+    prs = json.load(open(path)) if os.path.exists(path) else []
+    prs.append({"number": len(prs) + 1, "title": f"release: v{version}", "state": "open",
+                "base": {"ref": "main"}, "head": {"ref": f"release/v{version}"}})
+    json.dump(prs, open(path, "w"))
+
+
+def phase2(version):
+    sh("git", "checkout", "-q", "main")
+    sh("git", "pull", "-q", "--ff-only", "origin", "main")
+    phase = sh("python3", TOOL, "phase", version)
+    say(f"phase={phase}")
+    assert phase == "tag", phase
+    sh("python3", TOOL, "workflow-checks")
+    sh("git", "tag", "-a", f"v{version}", "-m", f"Release v{version}")
+    if MODE != "no-tag-push":
+        sh("git", "push", "-q", "origin", f"v{version}")
+
+
+def main():
+    open(f"{STATE}/claude.pid", "w").write(str(os.getpid()))
+    prompt = sys.argv[sys.argv.index("-p") + 1]
+    first = prompt.split("\n")[0]
+    if MODE == "fail":
+        result(is_error=True)
+        return 1
+    if MODE == "interrupt":
+        os.kill(os.getppid(), signal.SIGINT)
+        time.sleep(60)
+        return 0
+    sh("git", "fetch", "-q", "origin", "main")
+    if first == "/axc-cut-release patch":
+        phase1()
+    else:
+        phase2(first.split()[1])
+    result()
+    return 0
+
+
+sys.exit(main())
