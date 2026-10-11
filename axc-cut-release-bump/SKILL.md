@@ -47,7 +47,11 @@ first — this skill won't sweep unrelated changes into a release branch.
 4. Commit (substitute `{V}` in `commit.title`):
    `git commit -am "<commit.title>"`
    - If the session's instructions ask for a commit trailer (such as `Co-Authored-By:`), add it to this
-     commit message too — the title above is the subject line, not the whole message.
+     commit message too — the title above is the subject line, not the whole message. Give the trailer
+     as a second `-m`, which git puts in its own paragraph:
+     `git commit -a -m "<commit.title>" -m "<trailer>"`
+     Don't build the message with `$(…)` or `printf`: Claude Code can't check quoted command
+     substitution before it runs, so it blocks it.
 5. Push and open the PR:
    `git push -u origin <commit.branch>`
    `gh pr create --base <mainBranch> --head <commit.branch> --title "<commit.title>" --body "<body>"`
