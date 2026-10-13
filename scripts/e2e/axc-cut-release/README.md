@@ -23,15 +23,15 @@ creates a repo it couldn't remove.
 | Flag | Effect |
 |---|---|
 | `--dry-run` | check the environment and print the plan |
-| `--happy-path-only` | run just bump -> merge -> tag; skip the three extra scenarios |
+| `--happy-path-only` | run just bump -> merge -> hand back -> tag; skip the three extra scenarios |
 | `--keep` | skip teardown, to inspect the folder and repo afterwards |
 | `--ssh` | use an SSH remote instead of HTTPS |
 | `--model M` | model for the Claude sessions |
 | `--max-budget-usd N` | spend cap per Claude session (default 3) |
 | `--timeout-min N` | kill a session after N minutes (default 15) |
 
-A full run is six Claude sessions (two with `--happy-path-only`), about $0.50 in total (a real
-full run cost $0.50; two sessions cost $0.20).
+A full run is seven Claude sessions (three with `--happy-path-only`), roughly $0.55 in total (the
+last six-session run cost $0.50).
 
 Exit codes: `0` all checks passed, `1` a check failed or teardown didn't finish, `2` the run
 aborted (setup failed, or a git/gh call errored mid-test), `130` interrupted.
@@ -41,18 +41,20 @@ aborted (setup failed, or a git/gh call errored mid-test), `130` interrupted.
 1. **Set up.** Checks `tmp/` is gitignored (creates it if missing), makes
    `tmp/axc-cut-release-e2e-<timestamp>/`, `git init`s it with a README, creates a private repo of
    the same name, and copies the four skills into the project's `.claude/skills/` (excluded from git).
-2. **Test.** Pushes an initial commit, edits the README and pushes again. Then the happy path:
+2. **Test.** Pushes an initial commit, edits the README and pushes again. Then the happy path, which
+   follows ADR 0005 (the tag skill is user-only, so the router can't hand Phase 2 to it):
    `/axc-cut-release patch` should open a bump PR; the script merges it through the API (the step a
-   human does); `/axc-cut-release 0.1.1` should push the tag. Each stage checks the repo's state,
-   and which skills the agent invoked (the router must delegate to the bump skill, and to the tag
-   skill, which must run preflight first).
+   human does); `/axc-cut-release 0.1.1` must stop and tell the user to run
+   `/axc-cut-release-tag 0.1.1`, tagging nothing; then `/axc-cut-release-tag 0.1.1`, run directly as
+   a user would, must run preflight and push the tag. Each stage checks the repo's state and which
+   skills the agent invoked.
    Then three extra scenarios reuse the project (skip them with `--happy-path-only`):
 
    | Scenario | Prompt | Must prove |
    |---|---|---|
    | Already released | `/axc-cut-release 0.1.1` again | the router stops without delegating, says it's released, and nothing on the remote changes |
    | Preflight blocks | `/axc-cut-release-preflight 0.1.1` | verdict is **Blocked**, cites `v0.1.1`, and nothing changes (remote, HEAD, working tree) |
-   | Confirmation gate | bump and merge `0.1.2`, then `/axc-cut-release 0.1.2` with the note that nobody will reply | preflight runs, the agent asks about pushing the tag and stops, and no tag is created locally or pushed |
+   | Confirmation gate | bump and merge `0.1.2`, then `/axc-cut-release-tag 0.1.2` with the note that nobody will reply | preflight runs, the agent asks about pushing the tag and stops, and no tag is created locally or pushed |
 
    The gate scenario doesn't tell the agent to answer "no": it tells it nobody will reply, so a
    skill that waits for the user ends its turn with the question, and one that doesn't would tag.
@@ -71,7 +73,7 @@ If a run is killed hard (power loss, `kill -9`) a repo can be left behind. They 
 `axc-cut-release-e2e-*`; delete one with `gh repo delete <you>/<name> --yes`.
 
 The project's "release workflow" is `ci/release.yml`, outside `.github/`, so pushing the tag
-triggers nothing on GitHub. Phase 2's prompt tells the agent to answer yes at the tag
+triggers nothing on GitHub. The happy path's tag prompt tells the agent to answer yes at the tag
 confirmation, so this checks the tag flow, not that the gate stops a "no".
 
 ## Layout

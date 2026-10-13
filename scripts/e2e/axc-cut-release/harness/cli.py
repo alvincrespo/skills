@@ -48,17 +48,19 @@ def print_plan(ctx: RunContext) -> None:
     log.info("  2. push an initial commit, change the README, push again")
     log.info(f"  3. `/axc-cut-release patch`  -> verify a PR bumping {first.previous} -> {first.version}")
     log.info("  4. merge that PR through the API")
-    log.info(f"  5. `/axc-cut-release {first.version}`  -> verify tag {first.tag} on the remote")
+    log.info(f"  5. `/axc-cut-release {first.version}`  -> the router hands Phase 2 back: tells the user to run "
+             f"`/axc-cut-release-tag {first.version}`, and tags nothing")
+    log.info(f"  6. `/axc-cut-release-tag {first.version}`  -> verify tag {first.tag} on the remote")
     if ctx.options.happy_path_only:
         log.info("  (--happy-path-only: the extra scenarios are skipped)")
-        sessions = 2
+        sessions = 3
     else:
-        log.info(f"  6. `/axc-cut-release {first.version}` again  -> the router stops: already released")
-        log.info(f"  7. `/axc-cut-release-preflight {first.version}`  -> Blocked, cites {first.tag}, read-only")
-        log.info(f"  8. bump and merge {second.version}, then `/axc-cut-release {second.version}` with "
+        log.info(f"  7. `/axc-cut-release {first.version}` again  -> the router stops: already released")
+        log.info(f"  8. `/axc-cut-release-preflight {first.version}`  -> Blocked, cites {first.tag}, read-only")
+        log.info(f"  9. bump and merge {second.version}, then `/axc-cut-release-tag {second.version}` with "
                  f"nobody to confirm  -> asks, and does not tag")
-        sessions = 6
-    log.info("  9. delete the folder and the repo")
+        sessions = 7
+    log.info(f"  {7 if ctx.options.happy_path_only else 10}. delete the folder and the repo")
     log.info(f"  {sessions} Claude sessions, each capped at ${ctx.options.max_budget_usd}.")
 
 

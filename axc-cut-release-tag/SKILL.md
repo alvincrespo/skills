@@ -1,6 +1,7 @@
 ---
 name: axc-cut-release-tag
-description: Phase 2 of a release — preflight, then push the `vX.Y.Z` tag that triggers publishing. Driven by the repo's `.claude/release.json`. Confirms main carries the target version, runs `axc-cut-release-preflight`, gets explicit user confirmation (naming the publish consequence), then creates and pushes the annotated tag. Never tags without a green preflight and a yes. Use when the user says "/axc-cut-release-tag", or invoked by the `axc-cut-release` router for Phase 2.
+disable-model-invocation: true
+description: Phase 2 of a release — preflight, then push the `vX.Y.Z` tag that triggers publishing. Driven by the repo's `.claude/release.json`. Confirms main carries the target version, runs `axc-cut-release-preflight`, gets explicit user confirmation (naming the publish consequence), then creates and pushes the annotated tag. Never tags without a green preflight and a yes. User-only: run it as `/axc-cut-release-tag <V>` (the `axc-cut-release` router tells you when).
 ---
 
 # Release Tag (Phase 2)

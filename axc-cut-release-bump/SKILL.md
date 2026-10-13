@@ -1,6 +1,6 @@
 ---
 name: axc-cut-release-bump
-description: Phase 1 of a release — open the version-bump PR, driven by the repo's `.claude/release.json`. Branches off main, bumps the version in the configured file(s) (or runs the configured bump command), sanity-checks, commits, and opens a PR. Stops there — the user merges it, then runs `/axc-cut-release` again to tag. Never pushes to main. Use when the user says "/axc-cut-release-bump", or invoked by the `axc-cut-release` router for Phase 1.
+description: Phase 1 of a release — open the version-bump PR, driven by the repo's `.claude/release.json`. Branches off main, bumps the version in the configured file(s) (or runs the configured bump command), sanity-checks, commits, and opens a PR. Stops there — the user merges it, then runs `/axc-cut-release-tag <V>` to tag. Never pushes to main. Use when the user says "/axc-cut-release-bump", or invoked by the `axc-cut-release` router for Phase 1.
 ---
 
 # Release Bump (Phase 1)
@@ -58,8 +58,9 @@ first — this skill won't sweep unrelated changes into a release branch.
    - Body: one line stating the bump (`cur → V`) and that merging unblocks tagging `<tagFormat>`.
      Note CI must be green before merge.
 6. **Stop.** Report the PR URL and the exact next step:
-   > PR #NN opened. Review and merge it, then run `/axc-cut-release <V>` to tag and publish.
-   (Naming the **explicit** `V` avoids a keyword re-run recomputing a fresh bump.)
+   > PR #NN opened. Review and merge it, then run `/axc-cut-release-tag <V>` to tag and publish.
+   (Name the **explicit** `V`. `/axc-cut-release-tag` is the command that tags; a keyword re-run of
+   `/axc-cut-release` would recompute a fresh bump instead.)
 
 Opening a PR is reversible (close it), so this proceeds without a yes/no gate — but always show the
 resolved version and branch name first.

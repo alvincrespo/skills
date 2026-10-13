@@ -1,6 +1,6 @@
 ---
 name: axc-cut-release
-description: Cut a release end to end in any project, driven by the repo's `.claude/release.json`. The entry point / router — resolves the target version (semver keyword like `patch`/`minor`/`major`, an explicit version like `0.3.0`, or — with no arg — the next patch), detects which phase the release is in from repo state, and delegates to `axc-cut-release-bump` (Phase 1: open a version-bump PR) or `axc-cut-release-tag` (Phase 2: preflight + push the `vX.Y.Z` tag). Respects the "PRs only, never push to main" rule. Use when the user says "/axc-cut-release", "cut a release", "ship a release", "publish a new version", or similar.
+description: Cut a release end to end in any project, driven by the repo's `.claude/release.json`. The entry point / router — resolves the target version (semver keyword like `patch`/`minor`/`major`, an explicit version like `0.3.0`, or — with no arg — the next patch), detects which phase the release is in from repo state, and either delegates to `axc-cut-release-bump` (Phase 1: open a version-bump PR) or, for Phase 2, tells the user to run `/axc-cut-release-tag <V>` themselves (preflight + push the `vX.Y.Z` tag, which publishes). Respects the "PRs only, never push to main" rule. Use when the user says "/axc-cut-release", "cut a release", "ship a release", "publish a new version", or similar.
 ---
 
 # Cut Release (router)
@@ -10,11 +10,15 @@ publishes the release artifact (npm package, GitHub Release, …). The version r
 already equal the tag's version — and `main` only changes through a PR. So a release is two phases:
 
 - **Phase 1 — bump:** branch, bump the version, open a PR. The user merges it.
-- **Phase 2 — tag:** once `main` carries the new version, run preflight, then push the tag. CI publishes.
+- **Phase 2 — tag:** once `main` carries the new version, the user runs `/axc-cut-release-tag <V>`: it runs
+  preflight, then pushes the tag. CI publishes.
 
-This skill is the **router**: it resolves the version and detects the phase from repo state, then
-hands off to the sub-skill that does the work. Run `/axc-cut-release` once to open the PR, and again
-(after merging) to tag. Each sub-skill is also runnable on its own.
+This skill is the **router**: it resolves the version and detects the phase from repo state. For
+Phase 1 it hands off to `axc-cut-release-bump`. For Phase 2 it stops and tells the user the exact
+command, because pushing the tag publishes a public release and `axc-cut-release-tag` is user-only
+(`disable-model-invocation: true`, see `docs/adr/0005-release-skills-invocation-control.md`): Claude
+can't start it, or be handed off to it. Run `/axc-cut-release` to open the PR, and after merging it
+run `/axc-cut-release-tag <V>` to tag. The bump skill is also runnable on its own.
 
 ## Adapter config (`.claude/release.json`)
 
@@ -81,14 +85,15 @@ expands a variable before it runs, so it blocks it or prompts the user.
 
 Run `release_tool.py phase <V>` (it fetches `origin/<mainBranch>` itself). Its first line is one of:
 
-- **`tag`** → the bump is already on `main` and the tag doesn't exist. Route to **Phase 2**.
+- **`tag`** → the bump is already on `main` and the tag doesn't exist. This is **Phase 2**, which the
+  user starts (see Route).
 - **`released`** → a tag for `V` already exists. Run `release_tool.py tag-status <V>` to see where:
   - `remote` or `both` → released. Stop and say so (retagging is a separate, destructive op, out of
     scope).
   - `local` → it was never pushed, so nothing was published. Stop and say that: the user can push the
     tag, or delete it (`git tag -d <tag>`) and re-run. Don't do either for them.
 - **`bump`** → the bump isn't on `main` yet. Route to **Phase 1**. If a second line `open-pr <N>`
-  follows, a release PR is already open: tell the user to merge PR `N`, then re-run to tag. Don't open
+  follows, a release PR is already open: tell the user to merge PR `N`, then run `/axc-cut-release-tag <V>` to tag. Don't open
   a duplicate. If stderr instead says `warning: could not check for an open release PR`, the lookup
   failed (for example `gh` isn't installed or logged in): tell the user, and ask whether a release PR
   for the branch is already open before routing to Phase 1.
@@ -98,14 +103,19 @@ State the resolved version, the detected phase, and what will happen, before rou
 ## Route
 
 - **Phase 1** → run the **`axc-cut-release-bump`** skill with version `V`.
-- **Phase 2** → run the **`axc-cut-release-tag`** skill with version `V`.
+- **Phase 2** → stop, and tell the user: "Version `V` is on `main` and not yet tagged. Run
+  `/axc-cut-release-tag V` to run preflight and push the tag." Name the exact version. Don't try to
+  invoke `axc-cut-release-tag` with the Skill tool (it refuses a user-only skill), and don't carry out
+  its steps yourself by other means: it is reserved for an explicit request from the user.
 
-The router itself performs no git mutations — every change happens inside the delegated sub-skill,
-which re-reads the config and repo state independently.
+The router itself performs no git mutations — every change happens inside the bump skill, which
+re-reads the config and repo state independently.
 
 ## What this skill does NOT do
 
-- **Does not act beyond routing.** All mutations (bump, commit, PR, tag, push) live in the sub-skills.
+- **Does not act beyond routing.** The bump, commit and PR live in the bump skill; the tag and push live
+  in the tag skill, which only the user can start.
+- **Does not tag or push a tag, ever.** Phase 2 is the user's explicit `/axc-cut-release-tag <V>`.
 - **Does not pick a phase silently.** Always states the resolved version and detected phase first.
 - **Does not push to `main`, merge PRs, or retag.** Those guarantees are enforced by the sub-skills.
 

@@ -112,16 +112,27 @@ class Stages:
 
     # --- tag -----------------------------------------------------------------------
 
-    def tag_release(self, release: Release, label: str, what: str) -> None:
-        """`/axc-cut-release <V>` should run preflight, then push the tag."""
+    def hand_back_to_user(self, release: Release, label: str, what: str) -> None:
+        """Phase 2 belongs to the user: `/axc-cut-release <V>` must stop and name the command."""
         self.log.step(f"{_capitalise(what)}: /axc-cut-release {release.version}   "
-                      f"(expects preflight, then tag {release.tag} pushed)")
+                      f"(the router should hand Phase 2 back: tell the user to run /axc-cut-release-tag)")
+        remote_before = self.repo.remote_refs()
         session = self.run_skill(label, f"/axc-cut-release {release.version}", what)
-        used = list(session.skills_used)
-        ran_in_order = (TAG_SKILL in used and PREFLIGHT_SKILL in used
-                        and used.index(TAG_SKILL) < used.index(PREFLIGHT_SKILL))
-        self.report.check(f"{what}: the router ran {TAG_SKILL}, which ran preflight first",
-                          ran_in_order, f"skills used: {used}")
+        self.report.check(f"{what}: the router did not invoke {TAG_SKILL}", TAG_SKILL not in session.skills_used,
+                          f"skills used: {list(session.skills_used)}")
+        command = f"/axc-cut-release-tag {release.version}"
+        self.report.check(f"{what}: it tells the user to run {command}", command in session.final_text,
+                          session.final_text[:300])
+        self.report.check(f"{what}: nothing was tagged or pushed",
+                          self.repo.remote_refs() == remote_before and not self.repo.git("tag", "-l", release.tag))
+
+    def tag_release(self, release: Release, label: str, what: str) -> None:
+        """`/axc-cut-release-tag <V>`, run by the user, should run preflight, then push the tag."""
+        self.log.step(f"{_capitalise(what)}: /axc-cut-release-tag {release.version}   "
+                      f"(expects preflight, then tag {release.tag} pushed)")
+        session = self.run_skill(label, f"/axc-cut-release-tag {release.version}", what)
+        self.report.check(f"{what}: the tag skill ran {PREFLIGHT_SKILL}", PREFLIGHT_SKILL in session.skills_used,
+                          f"skills used: {list(session.skills_used)}")
         self._check_tag(release, self.repo.remote_refs("refs/tags/*"))
 
         version = self.gh.file_text(self.ctx.full_name, "VERSION", "main")

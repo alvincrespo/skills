@@ -685,6 +685,72 @@ class AsciiStdoutTests(unittest.TestCase):
         self.assertIn("b (not found in wf.yml)", result.stdout)
 
 
+# Copied from the table in docs/adr/0005-release-skills-invocation-control.md.
+# True = `disable-model-invocation: true`; False = the line is absent.
+# When that ADR's table changes, this dict has to change with it.
+ADR_0005_DISABLE_MODEL_INVOCATION = {
+    "axc-cut-release": False,
+    "axc-cut-release-bump": False,
+    "axc-cut-release-preflight": False,
+    "axc-cut-release-tag": True,
+}
+
+
+def frontmatter_flags(skills_root: Path) -> dict[str, bool]:
+    """`disable-model-invocation` for each release skill under `skills_root`.
+
+    Reads the block between the first two `---` lines of its SKILL.md. The line must be
+    `disable-model-invocation: true` or absent; any other value raises.
+    """
+    flags = {}
+    for name in ADR_0005_DISABLE_MODEL_INVOCATION:
+        lines = (skills_root / name / "SKILL.md").read_text(encoding="utf-8").splitlines()
+        if not lines or lines[0].strip() != "---":
+            raise AssertionError(f"{name}/SKILL.md does not start with a frontmatter block")
+        end = next(i for i, line in enumerate(lines[1:], 1) if line.strip() == "---")
+        values = [line.split(":", 1)[1].strip() for line in lines[1:end]
+                  if line.startswith("disable-model-invocation:")]
+        if len(values) > 1 or (values and values[0] != "true"):
+            raise AssertionError(f"{name}: disable-model-invocation must be `true` or absent, got {values}")
+        flags[name] = bool(values)
+    return flags
+
+
+class FrontmatterTests(unittest.TestCase):
+    SKILLS_ROOT = Path(__file__).resolve().parents[2]
+
+    def test_frontmatter_matches_adr(self) -> None:
+        self.assertEqual(frontmatter_flags(self.SKILLS_ROOT), ADR_0005_DISABLE_MODEL_INVOCATION)
+
+    def test_changing_any_one_flag_is_caught(self) -> None:
+        for name, flagged in ADR_0005_DISABLE_MODEL_INVOCATION.items():
+            with self.subTest(skill=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                for skill in ADR_0005_DISABLE_MODEL_INVOCATION:
+                    (root / skill).mkdir()
+                    shutil.copy(self.SKILLS_ROOT / skill / "SKILL.md", root / skill / "SKILL.md")
+                path = root / name / "SKILL.md"
+                text = path.read_text(encoding="utf-8")
+                if flagged:   # remove the flag
+                    text = text.replace("disable-model-invocation: true\n", "", 1)
+                else:         # add it
+                    text = text.replace("---\n", "---\ndisable-model-invocation: true\n", 1)
+                path.write_text(text, encoding="utf-8")
+                self.assertNotEqual(frontmatter_flags(root), ADR_0005_DISABLE_MODEL_INVOCATION)
+
+    def test_a_flag_set_to_something_other_than_true_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for skill in ADR_0005_DISABLE_MODEL_INVOCATION:
+                (root / skill).mkdir()
+                shutil.copy(self.SKILLS_ROOT / skill / "SKILL.md", root / skill / "SKILL.md")
+            path = root / "axc-cut-release" / "SKILL.md"
+            path.write_text(path.read_text(encoding="utf-8").replace(
+                "---\n", "---\ndisable-model-invocation: false\n", 1), encoding="utf-8")
+            with self.assertRaises(AssertionError):
+                frontmatter_flags(root)
+
+
 class VersionRegexTests(unittest.TestCase):
     def test_captures_prerelease(self) -> None:
         m = release_tool.version_regex('"version": "{V}"').search('"version": "1.2.3-rc.1"')
