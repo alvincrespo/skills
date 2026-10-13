@@ -34,6 +34,9 @@ first — this skill won't sweep unrelated changes into a release branch.
    python3 "${CLAUDE_SKILL_DIR}/../axc-cut-release/scripts/release_tool.py" bump <V>
    python3 "${CLAUDE_SKILL_DIR}/../axc-cut-release/scripts/release_tool.py" check-versions <V>
    ```
+   Run each call as its own command with the full path above. Don't assign the path to a shell
+   variable (`T=…; python3 $T …`): Claude Code can't check a command that expands a variable before
+   it runs, so it blocks it or prompts the user.
    `bump` rewrites only the version literal in **every** `version.files[]` entry (or, if
    `version.bumpCommand` is set, runs that command instead and verifies the result — this also covers
    any lockfile it updates). If a file's `match` pattern isn't found it exits `2` having written
@@ -44,7 +47,11 @@ first — this skill won't sweep unrelated changes into a release branch.
 4. Commit (substitute `{V}` in `commit.title`):
    `git commit -am "<commit.title>"`
    - If the session's instructions ask for a commit trailer (such as `Co-Authored-By:`), add it to this
-     commit message too — the title above is the subject line, not the whole message.
+     commit message too — the title above is the subject line, not the whole message. Give the trailer
+     as a second `-m`, which git puts in its own paragraph:
+     `git commit -a -m "<commit.title>" -m "<trailer>"`
+     Don't build the message with `$(…)` or `printf`: Claude Code can't check quoted command
+     substitution before it runs, so it blocks it.
 5. Push and open the PR:
    `git push -u origin <commit.branch>`
    `gh pr create --base <mainBranch> --head <commit.branch> --title "<commit.title>" --body "<body>"`

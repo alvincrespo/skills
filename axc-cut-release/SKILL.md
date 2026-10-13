@@ -57,6 +57,10 @@ and show the user the message — don't work around it — except for the one ca
 "Resolve target version" (a keyword refused because the current version is a prerelease), where you
 ask for an explicit version instead. Don't recompute versions or phases by hand.
 
+Run each `release_tool.py` call as its own command with the full path shown here. Don't assign
+the path to a shell variable (`T=…; python3 $T …`): Claude Code can't check a command that
+expands a variable before it runs, so it blocks it or prompts the user.
+
 ## Resolve target version `V`
 
 1. `git fetch origin <mainBranch>`, so `origin/<mainBranch>` is current.
