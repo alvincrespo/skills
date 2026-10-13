@@ -30,8 +30,8 @@ creates a repo it couldn't remove.
 | `--max-budget-usd N` | spend cap per Claude session (default 3) |
 | `--timeout-min N` | kill a session after N minutes (default 15) |
 
-A full run is six Claude sessions (two with `--happy-path-only`), about $0.60 in total at the
-earlier runs' prices.
+A full run is six Claude sessions (two with `--happy-path-only`), about $0.50 in total (a real
+full run cost $0.50; two sessions cost $0.20).
 
 Exit codes: `0` all checks passed, `1` a check failed or teardown didn't finish, `2` the run
 aborted (setup failed, or a git/gh call errored mid-test), `130` interrupted.

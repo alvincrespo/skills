@@ -19,6 +19,10 @@ TAG_SKILL = "axc-cut-release-tag"
 PREFLIGHT_SKILL = "axc-cut-release-preflight"
 
 
+def _capitalise(text: str) -> str:
+    return text[:1].upper() + text[1:]
+
+
 class Stages:
     def __init__(self, ctx: RunContext, repo: GitRepo, claude: ClaudeRunner) -> None:
         self.ctx = ctx
@@ -62,7 +66,7 @@ class Stages:
 
     def open_bump_pr(self, release: Release, label: str, what: str) -> int | None:
         """`/axc-cut-release patch` should open a PR for `release`. Returns its number, or None."""
-        self.log.step(f"{what}: /axc-cut-release patch   "
+        self.log.step(f"{_capitalise(what)}: /axc-cut-release patch   "
                       f"(expects a PR bumping {release.previous} -> {release.version})")
         main_before = self.repo.remote_head()
         session = self.run_skill(label, "/axc-cut-release patch", what)
@@ -110,7 +114,7 @@ class Stages:
 
     def tag_release(self, release: Release, label: str, what: str) -> None:
         """`/axc-cut-release <V>` should run preflight, then push the tag."""
-        self.log.step(f"{what}: /axc-cut-release {release.version}   "
+        self.log.step(f"{_capitalise(what)}: /axc-cut-release {release.version}   "
                       f"(expects preflight, then tag {release.tag} pushed)")
         session = self.run_skill(label, f"/axc-cut-release {release.version}", what)
         used = list(session.skills_used)

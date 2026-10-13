@@ -110,7 +110,7 @@ class ClaudeRunner:
         cost = float(summary.cost or 0)
         self.log.info(f"    finished in {time.time() - started:.0f}s, exit {code}, "
                       f"{summary.subtype or 'no result event'}, "
-                      f"cost ${summary.cost if summary.cost is not None else '?'}")
+                      f"cost {'$' + format(summary.cost, '.3f') if summary.cost is not None else '?'}")
         return Session(code, timed_out.is_set(), summary.is_error, cost, summary.final_text,
                        tuple(summary.tool_errors), tuple(summary.skills))
 

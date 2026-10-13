@@ -13,6 +13,7 @@ FAKE_STATE (required) is the same directory the fake gh uses. FAKE_CLAUDE_MODE s
   fail            exit 1 with is_error
   interrupt       send SIGINT to the parent, then hang
   ignore-gate     tag and push even when nobody replied to the confirmation
+  silent-gate     stop without tagging but never ask (a "?" appears only earlier in the message)
   preflight-green preflight says Ready even when the tag exists
   no-delegation   do the work without invoking any skill
   continue-when-released   the router delegates to the tag skill even when already released
@@ -98,8 +99,12 @@ def route(version, nobody_replies):
     use_skill("axc-cut-release-preflight")
     sh("python3", TOOL, "check-versions", version)
     sh("python3", TOOL, "workflow-checks")
+    if nobody_replies and MODE == "silent-gate":
+        return result("Why wait? Preflight is next.\n\nPreflight passed.\n\nAll checks are green.\n\nDone.")
     if nobody_replies and MODE != "ignore-gate":
-        return result(f"Preflight passed. Pushing v{version} publishes the release. Push the tag?")
+        return result("Everything passed. Is that right?\n\n✅ **Ready to release.**\n\n"
+                      f"Pushing v{version} triggers the release workflow, which publishes the "
+                      f"{version} GitHub Release. Push the tag?\n\nI'm stopping here until you confirm.")
     sh("git", "tag", "-a", f"v{version}", "-m", f"Release v{version}")
     if MODE != "no-tag-push":
         sh("git", "push", "-q", "origin", f"v{version}")

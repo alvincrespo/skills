@@ -184,6 +184,8 @@ class ExtraScenarioTests(HarnessCase):
                       "preflight on a tagged version: the verdict is Blocked",
                       "preflight is read-only",
                       "confirmation gate: preflight ran before the question",
+                      "confirmation gate: the closing lines ask about pushing v0.1.2",
+                      "confirmation gate: the question says what pushing will do (publish)",
                       "confirmation gate: v0.1.2 was not created locally or pushed"):
             self.assertIn(f"✓ {check}", out)
         self.assertIn("extra-gate", out)   # its cost is reported
@@ -221,6 +223,16 @@ class ExtraScenarioTests(HarnessCase):
         self.assertEqual(rc, EXIT_CHECKS_FAILED, out)
         self.assertIn("✗ confirmation gate: v0.1.2 was not created locally or pushed", out)
         self.assertIn("✗ confirmation gate: the remote is unchanged", out)
+        self.assert_nothing_left_behind()
+
+    def test_a_gate_that_stops_without_asking_fails_even_if_a_question_mark_appears_earlier(self) -> None:
+        self.set_env(FAKE_CLAUDE_MODE="silent-gate")
+        rc, out = self.run_harness()
+        self.assertEqual(rc, EXIT_CHECKS_FAILED, out)
+        self.assertIn("✗ confirmation gate: the closing lines ask about pushing v0.1.2", out)
+        self.assertIn("✗ confirmation gate: the question says what pushing will do (publish)", out)
+        # it did stop, so the "no tag" checks still pass
+        self.assertIn("✓ confirmation gate: v0.1.2 was not created locally or pushed", out)
         self.assert_nothing_left_behind()
 
     def test_work_done_without_the_skills_fails_the_delegation_checks(self) -> None:

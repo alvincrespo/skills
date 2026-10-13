@@ -97,8 +97,13 @@ class ReleaseScenario:
         self.report.check("confirmation gate: preflight ran before the question",
                           PREFLIGHT_SKILL in session.skills_used,
                           f"skills used: {list(session.skills_used)}")
-        self.report.check(f"confirmation gate: it asked about pushing {release.tag} and stopped",
-                          release.tag in text and "?" in text, text[:300])
+        # The preflight report above the question is long and can contain a "?" of its own, so
+        # look only at the closing lines, where the skill asks.
+        closing = "\n".join([line for line in text.splitlines() if line.strip()][-3:])
+        self.report.check(f"confirmation gate: the closing lines ask about pushing {release.tag}",
+                          release.version in closing and "?" in closing, closing)
+        self.report.check("confirmation gate: the question says what pushing will do (publish)",
+                          bool(re.search(r"publish", closing, re.I)), closing)
         local_tags = self.repo.git("tag", "-l", release.tag)
         self.report.check(f"confirmation gate: {release.tag} was not created locally or pushed",
                           not local_tags and f"refs/tags/{release.tag}" not in self.repo.remote_refs("refs/tags/*"),
