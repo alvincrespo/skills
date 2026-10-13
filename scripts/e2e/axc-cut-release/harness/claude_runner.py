@@ -22,6 +22,7 @@ class Session:
     cost_usd: float
     final_text: str
     tool_errors: tuple[str, ...] = ()   # results of tool calls that failed, e.g. a denied command
+    skills_used: tuple[str, ...] = ()   # skills the agent invoked, in order
 
     @property
     def finished_cleanly(self) -> bool:
@@ -35,6 +36,7 @@ class _StreamSummary:
     is_error: bool | None = None
     subtype: str | None = None
     tool_errors: list[str] = field(default_factory=list)
+    skills: list[str] = field(default_factory=list)
 
 
 def tool_result_text(item: dict) -> str:
@@ -72,8 +74,8 @@ class ClaudeRunner:
             cmd += ["--model", self.options.model]
         return cmd
 
-    def run(self, project: Path, label: str, skill_args: str) -> Session:
-        prompt = f"{skill_args}\n\n{AUTOMATION_NOTE}"
+    def run(self, project: Path, label: str, skill_args: str, note: str = AUTOMATION_NOTE) -> Session:
+        prompt = f"{skill_args}\n\n{note}"
         (self.logs_dir / f"{label}.prompt.txt").write_text(prompt)
         self.log.info(f"  running: {skill_args}   (in {project.name}, "
                       f"budget ${self.options.max_budget_usd})")
@@ -110,7 +112,7 @@ class ClaudeRunner:
                       f"{summary.subtype or 'no result event'}, "
                       f"cost ${summary.cost if summary.cost is not None else '?'}")
         return Session(code, timed_out.is_set(), summary.is_error, cost, summary.final_text,
-                       tuple(summary.tool_errors))
+                       tuple(summary.tool_errors), tuple(summary.skills))
 
     def _follow(self, proc: subprocess.Popen, label: str) -> _StreamSummary:
         """Read claude's stream-json, saving it and logging progress."""
@@ -129,6 +131,8 @@ class ClaudeRunner:
         if event.get("type") == "assistant":
             for item in event.get("message", {}).get("content", []):
                 if item.get("type") == "tool_use":
+                    if item.get("name") == "Skill":
+                        summary.skills.append(str(item.get("input", {}).get("skill", "")))
                     what = item.get("input", {}).get("command") or json.dumps(item.get("input", {}))
                     self.log.info(f"    agent -> {item.get('name')}: {str(what)[:200]}")
                 elif item.get("type") == "text":

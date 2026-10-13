@@ -172,6 +172,65 @@ class FullRunTests(HarnessCase):
         self.assertIn("teardown INCOMPLETE", out)
 
 
+class ExtraScenarioTests(HarnessCase):
+    def test_a_default_run_includes_all_three_extra_scenarios(self) -> None:
+        rc, out = self.run_harness()
+        self.assertEqual(rc, EXIT_OK, out)
+        for heading in ("Extra: /axc-cut-release 0.1.1 when v0.1.1 is already released",
+                        "Extra: /axc-cut-release-preflight 0.1.1 when v0.1.1 already exists",
+                        "Extra: /axc-cut-release 0.1.2 with nobody to confirm"):
+            self.assertIn(heading, out)
+        for check in ("already released: the router stopped without delegating",
+                      "preflight on a tagged version: the verdict is Blocked",
+                      "preflight is read-only",
+                      "confirmation gate: preflight ran before the question",
+                      "confirmation gate: v0.1.2 was not created locally or pushed"):
+            self.assertIn(f"✓ {check}", out)
+        self.assertIn("extra-gate", out)   # its cost is reported
+
+    def test_happy_path_only_skips_them(self) -> None:
+        rc, out = self.run_harness("--happy-path-only")
+        self.assertEqual(rc, EXIT_OK, out)
+        self.assertNotIn("Extra:", out)
+        self.assertNotIn("extra-gate", out)
+        self.assertIn("phase2-tag", out)
+
+    def test_the_plan_counts_the_sessions(self) -> None:
+        _, full = self.run_harness("--dry-run")
+        _, short = self.run_harness("--dry-run", "--happy-path-only")
+        self.assertIn("6 Claude sessions", full)
+        self.assertIn("2 Claude sessions", short)
+
+    def test_a_router_that_carries_on_when_already_released_fails_that_scenario(self) -> None:
+        self.set_env(FAKE_CLAUDE_MODE="continue-when-released")
+        rc, out = self.run_harness()
+        self.assertEqual(rc, EXIT_CHECKS_FAILED, out)
+        self.assertIn("✗ already released: the router stopped without delegating", out)
+        self.assert_nothing_left_behind()
+
+    def test_preflight_that_does_not_block_a_tagged_version_fails_that_scenario(self) -> None:
+        self.set_env(FAKE_CLAUDE_MODE="preflight-green")
+        rc, out = self.run_harness()
+        self.assertEqual(rc, EXIT_CHECKS_FAILED, out)
+        self.assertIn("✗ preflight on a tagged version: the verdict is Blocked", out)
+        self.assert_nothing_left_behind()
+
+    def test_a_tag_pushed_without_waiting_for_confirmation_fails_that_scenario(self) -> None:
+        self.set_env(FAKE_CLAUDE_MODE="ignore-gate")
+        rc, out = self.run_harness()
+        self.assertEqual(rc, EXIT_CHECKS_FAILED, out)
+        self.assertIn("✗ confirmation gate: v0.1.2 was not created locally or pushed", out)
+        self.assertIn("✗ confirmation gate: the remote is unchanged", out)
+        self.assert_nothing_left_behind()
+
+    def test_work_done_without_the_skills_fails_the_delegation_checks(self) -> None:
+        self.set_env(FAKE_CLAUDE_MODE="no-delegation")
+        rc, out = self.run_harness("--happy-path-only")
+        self.assertEqual(rc, EXIT_CHECKS_FAILED, out)
+        self.assertIn("✗ phase 1: the router delegated to axc-cut-release-bump", out)
+        self.assertIn("✗ phase 2: the router ran axc-cut-release-tag, which ran preflight first", out)
+
+
 class ToolErrorTests(HarnessCase):
     def test_a_clean_session_reports_none(self) -> None:
         rc, out = self.run_harness()

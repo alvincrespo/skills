@@ -7,8 +7,8 @@ import signal
 from collections import Counter
 
 from . import preflight
-from .config import (BASE_VERSION, EXIT_ABORTED, EXIT_CHECKS_FAILED, EXIT_INTERRUPTED, EXIT_OK,
-                     NAME_PREFIX, NEXT_VERSION, TAG, Options, Paths)
+from .config import (EXIT_ABORTED, EXIT_CHECKS_FAILED, EXIT_INTERRUPTED, EXIT_OK, FIRST_RELEASE,
+                     NAME_PREFIX, SECOND_RELEASE, Options, Paths)
 from .claude_runner import split_tool_errors
 from .context import RunContext
 from .errors import HarnessError
@@ -24,6 +24,8 @@ def parse_args(argv: list[str] | None) -> Options:
         description="End-to-end test of the axc-cut-release skills on a throwaway GitHub repo.")
     p.add_argument("--dry-run", action="store_true",
                    help="check the environment and print the plan; create nothing")
+    p.add_argument("--happy-path-only", action="store_true",
+                   help="run just bump -> merge -> tag, skipping the three extra scenarios")
     p.add_argument("--keep", action="store_true",
                    help="skip teardown, to inspect the repo and folder afterwards")
     p.add_argument("--ssh", action="store_true", help="use an SSH remote instead of HTTPS")
@@ -34,20 +36,30 @@ def parse_args(argv: list[str] | None) -> Options:
                    help="kill a Claude session after this many minutes")
     ns = p.parse_args(argv)
     return Options(dry_run=ns.dry_run, keep=ns.keep, ssh=ns.ssh, model=ns.model,
-                   max_budget_usd=ns.max_budget_usd, timeout_min=ns.timeout_min)
+                   max_budget_usd=ns.max_budget_usd, timeout_min=ns.timeout_min,
+                   happy_path_only=ns.happy_path_only)
 
 
 def print_plan(ctx: RunContext) -> None:
-    log = ctx.log
+    log, first, second = ctx.log, FIRST_RELEASE, SECOND_RELEASE
     log.step("Plan (dry run, nothing created)")
     log.info(f"  1. create {ctx.paths.tmp}/{NAME_PREFIX}<timestamp>/ and a private repo of that "
              f"name on {ctx.login}")
     log.info("  2. push an initial commit, change the README, push again")
-    log.info(f"  3. `/axc-cut-release patch`  -> verify a PR bumping {BASE_VERSION} -> {NEXT_VERSION}")
+    log.info(f"  3. `/axc-cut-release patch`  -> verify a PR bumping {first.previous} -> {first.version}")
     log.info("  4. merge that PR through the API")
-    log.info(f"  5. `/axc-cut-release {NEXT_VERSION}`  -> verify tag {TAG} on the remote")
-    log.info("  6. delete the folder and the repo")
-    log.info(f"  Two Claude sessions, each capped at ${ctx.options.max_budget_usd}.")
+    log.info(f"  5. `/axc-cut-release {first.version}`  -> verify tag {first.tag} on the remote")
+    if ctx.options.happy_path_only:
+        log.info("  (--happy-path-only: the extra scenarios are skipped)")
+        sessions = 2
+    else:
+        log.info(f"  6. `/axc-cut-release {first.version}` again  -> the router stops: already released")
+        log.info(f"  7. `/axc-cut-release-preflight {first.version}`  -> Blocked, cites {first.tag}, read-only")
+        log.info(f"  8. bump and merge {second.version}, then `/axc-cut-release {second.version}` with "
+                 f"nobody to confirm  -> asks, and does not tag")
+        sessions = 6
+    log.info("  9. delete the folder and the repo")
+    log.info(f"  {sessions} Claude sessions, each capped at ${ctx.options.max_budget_usd}.")
 
 
 def tool_error_lines(ctx: RunContext) -> list[str]:

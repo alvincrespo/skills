@@ -19,15 +19,43 @@ SKILLS = (
 # delete anything that doesn't, so a bug can't remove something that isn't ours.
 NAME_PREFIX = "axc-cut-release-e2e-"
 
-BASE_VERSION = "0.1.0"
-NEXT_VERSION = "0.1.1"  # what `/axc-cut-release patch` should produce from BASE_VERSION
-RELEASE_BRANCH = f"release/v{NEXT_VERSION}"
-TAG = f"v{NEXT_VERSION}"
 
+
+@dataclass(frozen=True)
+class Release:
+    """One release the scenario cuts: the version `/axc-cut-release patch` should produce."""
+
+    version: str
+    previous: str
+
+    @property
+    def branch(self) -> str:
+        return f"release/v{self.version}"
+
+    @property
+    def tag(self) -> str:
+        return f"v{self.version}"
+
+    @property
+    def title(self) -> str:
+        return f"release: v{self.version}"
+
+
+FIRST_RELEASE = Release("0.1.1", previous="0.1.0")    # the project starts at 0.1.0
+SECOND_RELEASE = Release("0.1.2", previous="0.1.1")
+BASE_VERSION = FIRST_RELEASE.previous
+
+# What each Claude session is told. The skills ask the user to confirm; nobody is there.
 AUTOMATION_NOTE = (
     "This is an automated end-to-end test in a throwaway repository. Nobody is "
     "available to answer questions, so if the skill asks you to confirm a version "
     "or a plan, answer yes and continue. Do not stop to ask."
+)
+# For the scenario that checks the skill really waits for the user before pushing a tag.
+NO_REPLY_NOTE = (
+    "This is an automated end-to-end test in a throwaway repository. Nobody will reply to "
+    "questions during this session. Do the work up to the point where the skill says to ask the "
+    "user to confirm, ask that question, and then end your turn. Do not proceed without a reply."
 )
 
 ALLOWED_TOOLS = (
@@ -79,3 +107,4 @@ class Options:
     model: str | None = None
     max_budget_usd: float = 3.0
     timeout_min: int = 15
+    happy_path_only: bool = False
