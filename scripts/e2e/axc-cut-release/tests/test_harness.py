@@ -350,6 +350,21 @@ class SandboxSafetyTests(unittest.TestCase):
         self.assertFalse(ctx.teardown_ok)
 
 
+class TeardownHintTests(unittest.TestCase):
+    def test_a_folder_that_cannot_be_removed_gets_a_manual_command(self) -> None:
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(out):
+            root = Path(d)
+            ctx = SandboxSafetyTests.make_ctx(root, name=f"{NAME_PREFIX}stuck")
+            ctx.paths.tmp.mkdir()
+            ctx.project_path.mkdir()
+            with mock.patch("harness.sandbox.shutil.rmtree"):   # leaves the folder behind
+                Sandbox(ctx)._remove_local_folder()
+        self.assertIn("✗ removed", out.getvalue())
+        self.assertIn(f'rm -rf "{root / "tmp" / (NAME_PREFIX + "stuck")}"', out.getvalue())
+        self.assertFalse(ctx.teardown_ok)
+
+
 class UnitTests(unittest.TestCase):
     def test_token_scopes_are_parsed(self) -> None:
         headers = "HTTP/2 200\nX-OAuth-Scopes: repo, gist ,delete_repo\n\n{}"

@@ -184,7 +184,7 @@ def format_tag(config: dict, v: str) -> str:
 
 def tag_status(repo_root: Path, tag: str) -> str:
     """One of: absent, local, remote, both."""
-    local = bool(git(["tag", "-l", tag], repo_root).strip())
+    local = tag in git(["tag", "-l"], repo_root).split()   # exact name; `tag -l <pat>` is a glob
     ref = f"refs/tags/{tag}"
     # ls-remote patterns match on a trailing path, so compare the ref names exactly
     # (annotated tags also list a peeled `<ref>^{}` line).
@@ -226,9 +226,10 @@ def release_phase(repo_root: Path, config: dict, v: str) -> list[str]:
         lines = ["bump"]
         branch = config["commit"]["branch"].replace("{V}", v)
         try:
+            repo = config.get("repo")
             number = gh(
-                ["pr", "list", "--head", branch, "--state", "open",
-                 "--json", "number", "-q", ".[0].number"],
+                ["pr", "list", *(["--repo", repo] if isinstance(repo, str) and repo else []),
+                 "--head", branch, "--state", "open", "--json", "number", "-q", ".[0].number"],
                 repo_root,
             ).strip()
         except ReleaseToolError as exc:
@@ -294,7 +295,16 @@ def _require_semver(v: str) -> str:
 
 
 def _write_atomic(path: Path, text: str) -> None:
-    """Replace path's contents via a temp file, so a failed write never leaves it truncated."""
+    """Replace path's contents via a temp file, so a failed write never leaves it truncated.
+
+    A symlinked version file is written through (the link stays a link). A hard-linked one is
+    written in place, because a rename would detach it from its other names.
+    """
+    path = path.resolve() if path.is_symlink() else path
+    if path.stat().st_nlink > 1:
+        with open(path, "w", newline="", encoding="utf-8") as fh:
+            fh.write(text)
+        return
     tmp = path.with_name(path.name + ".release-tmp")
     try:
         with open(tmp, "w", newline="", encoding="utf-8") as fh:

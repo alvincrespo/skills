@@ -139,9 +139,9 @@ class Stages:
         self.report.check(f"VERSION on main is {release.version}", version == release.version, version)
         commits = self.gh.commits(self.ctx.full_name, "main")
         self.report.check(
-            "main has exactly 3 commits (initial, README, the squashed bump PR): "
-            "nothing was pushed to it directly",
-            len(commits) == 3, f"{len(commits)} commits")
+            f"main has exactly {release.commits_on_main} commits (initial, README, and one squashed "
+            "commit per release PR): nothing was pushed to it directly",
+            len(commits) == release.commits_on_main, f"{len(commits)} commits")
 
     def _check_tag(self, release: Release, tags: dict[str, str]) -> None:
         tag = release.tag

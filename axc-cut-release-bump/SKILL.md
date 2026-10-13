@@ -29,6 +29,10 @@ first — this skill won't sweep unrelated changes into a release branch.
 
 1. `git fetch origin <mainBranch>`, then branch off it (substitute `{V}` in `commit.branch`):
    `git checkout -b <commit.branch> origin/<mainBranch>`
+   - If that branch already exists, locally or on origin (`git branch --list <commit.branch>`,
+     `git ls-remote --heads origin <commit.branch>`), stop and tell the user: a closed or abandoned
+     attempt left it behind. They can delete it or pick another version. Don't reuse it or
+     force-push over it.
 2. Bump the version with the router's helper script, then verify it:
    ```bash
    python3 "${CLAUDE_SKILL_DIR}/../axc-cut-release/scripts/release_tool.py" bump <V>
@@ -42,7 +46,10 @@ first — this skill won't sweep unrelated changes into a release branch.
    any lockfile it updates). If a file's `match` pattern isn't found it exits `2` having written
    nothing. `check-versions` must exit `0`, every file `✓`; on anything else, stop and report the
    output. Don't hand-edit the files to get past a failure.
-3. Sanity-check before committing: run `checks.build` and `checks.test` (and a formatter check if the
+3. Check what changed: `git status --short` should list only the `version.files[]` paths (plus a
+   lockfile, if `version.bumpCommand` updates one). If `bumpCommand` touched anything else, stop and
+   report it, because step 4 commits everything.
+   Then sanity-check before committing: run `checks.build` and `checks.test` (and a formatter check if the
    stack has one, e.g. `gofmt -l <dir>` or `npm run format -- --check`). If they fail, stop and report.
 4. Commit (substitute `{V}` in `commit.title`):
    `git commit -am "<commit.title>"`

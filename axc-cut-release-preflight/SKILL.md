@@ -92,11 +92,10 @@ command; skip (don't fail) any that's empty/absent:
 
 End with one of:
 
-- ✅ **Ready to release.** — all checks passed. Suggest the next commands:
-  ```
-  git tag <tagFormat>
-  git push origin <tagFormat>
-  ```
+- ✅ **Ready to release.** — all checks passed. If you were started by `axc-cut-release-tag`, return
+  the verdict to it. Otherwise suggest the next step: run `/axc-cut-release-tag <V>`, which re-runs
+  preflight, asks for confirmation, then creates the annotated tag and pushes it. Don't suggest
+  `git tag` / `git push` by hand: that skips the confirmation and makes a lightweight tag.
 - 🟡 **Mostly ready, but…** — non-blocking issues (missing optional tool, repo-metadata mismatch).
   Show what's odd and let the user decide.
 - ❌ **Blocked.** — one or more hard failures. List them and don't suggest tagging.

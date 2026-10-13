@@ -96,6 +96,7 @@ class ClaudeRunner:
             timer.daemon = True
             timer.start()
             summary = _StreamSummary()
+            code = -1   # stays -1 if waiting for the process itself fails
             try:
                 summary = self._follow(proc, label)
             finally:
