@@ -22,8 +22,14 @@ The target version `V` (e.g. `0.3.0`). If omitted, resolve it the way `axc-cut-r
 
 ## Precondition
 
-Working tree clean (`git status --porcelain` empty). If dirty, stop and ask the user to commit/stash
-first — this skill won't sweep unrelated changes into a release branch.
+No uncommitted changes to tracked files: `git status --porcelain --untracked-files=no` prints nothing.
+If it prints anything, stop and ask the user to commit or stash first — step 4 commits with `-a`,
+which would sweep those changes into the release commit.
+
+Untracked files are fine. `git commit -a` only stages tracked files, so an untracked file (a scratch
+note, a plan) can't end up in the release commit. Leave them alone. But record which ones there are
+now, because step 3 needs the list to spot files the bump creates, and step 6 reports it:
+`git ls-files --others --exclude-standard` (this skips gitignored files, which don't count).
 
 ## Steps
 
@@ -46,9 +52,15 @@ first — this skill won't sweep unrelated changes into a release branch.
    any lockfile it updates). If a file's `match` pattern isn't found it exits `2` having written
    nothing. `check-versions` must exit `0`, every file `✓`; on anything else, stop and report the
    output. Don't hand-edit the files to get past a failure.
-3. Check what changed: `git status --short` should list only the `version.files[]` paths (plus a
-   lockfile, if `version.bumpCommand` updates one). If `bumpCommand` touched anything else, stop and
-   report it, because step 4 commits everything.
+3. Check what changed, in two parts:
+   - Tracked files: `git status --short --untracked-files=no` should show **every** `version.files[]`
+     path as modified (a version file that isn't listed isn't tracked, so step 4 would leave its bump
+     out), and nothing else except a lockfile that `version.bumpCommand` updates. If anything else
+     changed, stop and report it, because step 4 commits it.
+   - New files: run `git ls-files --others --exclude-standard` again and compare it with the list you
+     recorded in the precondition. A file that wasn't there before was created by the bump (for
+     example a lockfile `bumpCommand` generated for the first time). `git commit -a` won't include it,
+     so the PR would be missing it: stop and tell the user, who can add it or remove it.
    Then sanity-check before committing: run `checks.build` and `checks.test` (and a formatter check if the
    stack has one, e.g. `gofmt -l <dir>` or `npm run format -- --check`). If they fail, stop and report.
 4. Commit (substitute `{V}` in `commit.title`):
@@ -68,6 +80,9 @@ first — this skill won't sweep unrelated changes into a release branch.
    > PR #NN opened. Review and merge it, then run `/axc-cut-release-tag <V>` to tag and publish.
    (Name the **explicit** `V`. `/axc-cut-release-tag` is the command that tags; a keyword re-run of
    `/axc-cut-release` would recompute a fresh bump instead.)
+   If the list you recorded in the precondition wasn't empty, show it and say those files were left
+   out of the commit. Preflight's "working tree clean" check does count untracked files, so tell the
+   user to move or stash them (`git stash -u`) before running `/axc-cut-release-tag`.
 
 Opening a PR is reversible (close it), so this proceeds without a yes/no gate — but always show the
 resolved version and branch name first.
