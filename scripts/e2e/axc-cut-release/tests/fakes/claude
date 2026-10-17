@@ -4,8 +4,10 @@ project's real release_tool.py, so the harness's setup, checks and teardown run 
 
 It recognises the prompts the harness sends:
   /axc-cut-release patch               open a bump PR (delegating to the bump skill)
-  /axc-cut-release <V>                 stop if released; else run preflight, then tag (or, if the
-                                       prompt says nobody will reply, ask to confirm and stop)
+  /axc-cut-release <V>                 stop if released; if untagged, hand Phase 2 back to the user
+                                       by naming `/axc-cut-release-tag <V>` (tags nothing)
+  /axc-cut-release-tag <V>             run preflight, then tag (or, if the prompt says nobody will
+                                       reply, ask to confirm and stop)
   /axc-cut-release-preflight <V>       report Blocked if the tag exists, else Ready
 
 FAKE_STATE (required) is the same directory the fake gh uses. FAKE_CLAUDE_MODE selects a failure:
@@ -16,6 +18,7 @@ FAKE_STATE (required) is the same directory the fake gh uses. FAKE_CLAUDE_MODE s
   silent-gate     stop without tagging but never ask (a "?" appears only earlier in the message)
   preflight-green preflight says Ready even when the tag exists
   no-delegation   do the work without invoking any skill
+  router-tags     the router invokes the tag skill and tags by itself (the old handoff)
   continue-when-released   the router delegates to the tag skill even when already released
 FAKE_CLAUDE_TOOL_ERRORS=1 also reports three failed tool calls: two permission denials and the
 404 the real tag skill hits for `gh run list --workflow=release.yml`.
@@ -84,7 +87,7 @@ def bump():
     result(f"Opened the PR bumping to {version}.")
 
 
-def route(version, nobody_replies):
+def route(version):
     phase = sh("python3", TOOL, "phase", version)
     say(f"phase={phase}")
     if phase == "released" and MODE == "continue-when-released":
@@ -93,7 +96,14 @@ def route(version, nobody_replies):
     if phase == "released":
         return result(f"Version {version} is already released (the tag exists). Stopping.")
     assert phase == "tag", phase
-    use_skill("axc-cut-release-tag")
+    if MODE == "router-tags":
+        use_skill("axc-cut-release-tag")
+        return tag_skill(version, nobody_replies=False)
+    result(f"Version {version} is on main and not yet tagged. Run `/axc-cut-release-tag {version}` "
+           "to run preflight and push the tag.")
+
+
+def tag_skill(version, nobody_replies):
     sh("git", "checkout", "-q", "main")
     sh("git", "pull", "-q", "--ff-only", "origin", "main")
     use_skill("axc-cut-release-preflight")
@@ -136,8 +146,10 @@ def main():
         bump()
     elif first.startswith("/axc-cut-release-preflight "):
         preflight(first.split()[1])
+    elif first.startswith("/axc-cut-release-tag "):
+        tag_skill(first.split()[1], nobody_replies="end your turn" in prompt)
     else:
-        route(first.split()[1], nobody_replies="end your turn" in prompt)
+        route(first.split()[1])
     return 0
 
 

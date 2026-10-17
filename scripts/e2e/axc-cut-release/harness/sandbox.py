@@ -107,6 +107,8 @@ class Sandbox:
         shutil.rmtree(path, ignore_errors=True)
         gone = not path.exists()
         log.info(f"  {'✓' if gone else '✗'} removed {path}")
+        if not gone:
+            log.info(f'    Remove it by hand:  rm -rf "{path}"')
         ctx.teardown_ok &= gone
 
     def _delete_remote_repo(self) -> None:

@@ -21,6 +21,10 @@ in their `SKILL.md` frontmatter — reachable only when a human explicitly
 asks, never inferred by Claude from conversational context. `axc-og-cards`
 sets it too, because every run can spend real money on image generation
 (`docs/adr/0003-axc-og-cards-node-and-cost-controls.md`).
+`axc-cut-release-tag` sets it too, because pushing the tag publishes a
+public release; the other three release skills don't, and the router
+hands Phase 2 back to the user as `/axc-cut-release-tag <V>` instead
+of invoking it (`docs/adr/0005-release-skills-invocation-control.md`).
 `project-epic-planner` and `github-labels-setup` are lower-stakes
 (planning is reversible, labels are trivially editable) and stay
 model-invoked. See `docs/adr/0002-invocation-control-on-github-actions.md`.
@@ -65,7 +69,7 @@ environment, never on the command line.
 
 Cut releases with `/axc-cut-release`, configured by `.claude/release.json`:
 the first run opens a PR bumping `plugin.json`'s `version`; after it
-merges, the second run preflights and pushes the `vX.Y.Z` tag. The tag
+merges, `/axc-cut-release-tag <V>` preflights and pushes the `vX.Y.Z` tag. The tag
 triggers `.github/workflows/release.yml`, which checks the tag against
 `plugin.json`, runs the tests (Python, and `axc-og-cards`' Node tests under
 `npm ci --prefix axc-og-cards`), packages the standalone skills, and

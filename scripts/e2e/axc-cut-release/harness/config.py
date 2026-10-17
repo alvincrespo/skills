@@ -27,6 +27,7 @@ class Release:
 
     version: str
     previous: str
+    commits_on_main: int   # once this release is tagged: initial + README + one per release PR
 
     @property
     def branch(self) -> str:
@@ -41,8 +42,8 @@ class Release:
         return f"release: v{self.version}"
 
 
-FIRST_RELEASE = Release("0.1.1", previous="0.1.0")    # the project starts at 0.1.0
-SECOND_RELEASE = Release("0.1.2", previous="0.1.1")
+FIRST_RELEASE = Release("0.1.1", previous="0.1.0", commits_on_main=3)    # the project starts at 0.1.0
+SECOND_RELEASE = Release("0.1.2", previous="0.1.1", commits_on_main=4)
 BASE_VERSION = FIRST_RELEASE.previous
 
 # What each Claude session is told. The skills ask the user to confirm; nobody is there.

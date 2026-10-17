@@ -178,7 +178,7 @@ class ExtraScenarioTests(HarnessCase):
         self.assertEqual(rc, EXIT_OK, out)
         for heading in ("Extra: /axc-cut-release 0.1.1 when v0.1.1 is already released",
                         "Extra: /axc-cut-release-preflight 0.1.1 when v0.1.1 already exists",
-                        "Extra: /axc-cut-release 0.1.2 with nobody to confirm"):
+                        "Extra: /axc-cut-release-tag 0.1.2 with nobody to confirm"):
             self.assertIn(heading, out)
         for check in ("already released: the router stopped without delegating",
                       "preflight on a tagged version: the verdict is Blocked",
@@ -200,8 +200,8 @@ class ExtraScenarioTests(HarnessCase):
     def test_the_plan_counts_the_sessions(self) -> None:
         _, full = self.run_harness("--dry-run")
         _, short = self.run_harness("--dry-run", "--happy-path-only")
-        self.assertIn("6 Claude sessions", full)
-        self.assertIn("2 Claude sessions", short)
+        self.assertIn("7 Claude sessions", full)
+        self.assertIn("3 Claude sessions", short)
 
     def test_a_router_that_carries_on_when_already_released_fails_that_scenario(self) -> None:
         self.set_env(FAKE_CLAUDE_MODE="continue-when-released")
@@ -225,6 +225,24 @@ class ExtraScenarioTests(HarnessCase):
         self.assertIn("✗ confirmation gate: the remote is unchanged", out)
         self.assert_nothing_left_behind()
 
+    def test_a_passing_run_checks_that_the_router_hands_phase_2_back(self) -> None:
+        rc, out = self.run_harness("--happy-path-only")
+        self.assertEqual(rc, EXIT_OK, out)
+        for check in ("phase 2 (router): the router did not invoke axc-cut-release-tag",
+                      "phase 2 (router): it tells the user to run /axc-cut-release-tag 0.1.1",
+                      "phase 2 (router): nothing was tagged or pushed",
+                      "phase 2 (tag skill): the tag skill ran axc-cut-release-preflight"):
+            self.assertIn(f"✓ {check}", out)
+
+    def test_a_router_that_tags_by_itself_fails_the_hand_back_checks(self) -> None:
+        self.set_env(FAKE_CLAUDE_MODE="router-tags")
+        rc, out = self.run_harness("--happy-path-only")
+        self.assertEqual(rc, EXIT_CHECKS_FAILED, out)
+        self.assertIn("✗ phase 2 (router): the router did not invoke axc-cut-release-tag", out)
+        self.assertIn("✗ phase 2 (router): it tells the user to run /axc-cut-release-tag 0.1.1", out)
+        self.assertIn("✗ phase 2 (router): nothing was tagged or pushed", out)
+        self.assert_nothing_left_behind()
+
     def test_a_gate_that_stops_without_asking_fails_even_if_a_question_mark_appears_earlier(self) -> None:
         self.set_env(FAKE_CLAUDE_MODE="silent-gate")
         rc, out = self.run_harness()
@@ -240,21 +258,25 @@ class ExtraScenarioTests(HarnessCase):
         rc, out = self.run_harness("--happy-path-only")
         self.assertEqual(rc, EXIT_CHECKS_FAILED, out)
         self.assertIn("✗ phase 1: the router delegated to axc-cut-release-bump", out)
-        self.assertIn("✗ phase 2: the router ran axc-cut-release-tag, which ran preflight first", out)
+        self.assertIn("✗ phase 2 (tag skill): the tag skill ran axc-cut-release-preflight", out)
 
 
 class ToolErrorTests(HarnessCase):
     def test_a_clean_session_reports_none(self) -> None:
         rc, out = self.run_harness()
         self.assertEqual(rc, EXIT_OK, out)
-        self.assertIn("tool errors: phase1-bump none; phase2-tag none", out)
+        line = next(l for l in out.splitlines() if l.startswith("  tool errors:"))
+        for label in ("phase1-bump", "phase2-router", "phase2-tag", "extra-gate"):
+            self.assertIn(f"{label} none", line)
+        self.assertNotIn("unexpected", line)
 
     def test_tool_errors_are_summarised_but_do_not_fail_the_run(self) -> None:
         self.set_env(FAKE_CLAUDE_TOOL_ERRORS="1")
         rc, out = self.run_harness()
         self.assertEqual(rc, EXIT_OK, out)
-        self.assertIn("tool errors: phase1-bump 3 (1 expected, 2 unexpected); "
-                      "phase2-tag 3 (1 expected, 2 unexpected)", out)
+        line = next(l for l in out.splitlines() if l.startswith("  tool errors:"))
+        for label in ("phase1-bump", "phase2-router", "phase2-tag", "extra-gate"):
+            self.assertIn(f"{label} 3 (1 expected, 2 unexpected)", line)
         # identical messages are grouped, and the expected 404 is not listed as a problem
         self.assertIn("phase1-bump: This Bash command contains multiple operations", out)
         self.assertIn("(x2)", out)
@@ -325,6 +347,21 @@ class SandboxSafetyTests(unittest.TestCase):
             ctx = self.make_ctx(root, name=f"../{NAME_PREFIX}escape")
             Sandbox(ctx)._remove_local_folder()
             self.assertTrue(victim.exists())
+        self.assertFalse(ctx.teardown_ok)
+
+
+class TeardownHintTests(unittest.TestCase):
+    def test_a_folder_that_cannot_be_removed_gets_a_manual_command(self) -> None:
+        out = io.StringIO()
+        with tempfile.TemporaryDirectory() as d, contextlib.redirect_stdout(out):
+            root = Path(d)
+            ctx = SandboxSafetyTests.make_ctx(root, name=f"{NAME_PREFIX}stuck")
+            ctx.paths.tmp.mkdir()
+            ctx.project_path.mkdir()
+            with mock.patch("harness.sandbox.shutil.rmtree"):   # leaves the folder behind
+                Sandbox(ctx)._remove_local_folder()
+        self.assertIn("✗ removed", out.getvalue())
+        self.assertIn(f'rm -rf "{root / "tmp" / (NAME_PREFIX + "stuck")}"', out.getvalue())
         self.assertFalse(ctx.teardown_ok)
 
 

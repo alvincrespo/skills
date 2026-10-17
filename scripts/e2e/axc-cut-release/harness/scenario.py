@@ -35,7 +35,7 @@ class ReleaseScenario:
     # --- scenarios -----------------------------------------------------------------
 
     def happy_path(self, release: Release) -> bool:
-        """Bump PR -> merge -> tag, through the real skills. Returns False if it couldn't finish."""
+        """Bump PR -> merge -> router hands back -> user runs the tag skill. False if it couldn't finish."""
         self.stages.push_initial_commit()
         self.stages.push_readme_change()
         number = self.stages.open_bump_pr(release, "phase1-bump", "phase 1")
@@ -44,7 +44,8 @@ class ReleaseScenario:
             return False
         if not self.stages.merge(number):
             return False
-        self.stages.tag_release(release, "phase2-tag", "phase 2")
+        self.stages.hand_back_to_user(release, "phase2-router", "phase 2 (router)")
+        self.stages.tag_release(release, "phase2-tag", "phase 2 (tag skill)")
         return True
 
     def already_released_stops(self, release: Release) -> None:
@@ -88,10 +89,10 @@ class ReleaseScenario:
         if number is None or not self.stages.merge(number):
             self.report.check("confirmation gate skipped: couldn't prepare the release", False)
             return
-        self.ctx.log.step(f"Extra: /axc-cut-release {release.version} with nobody to confirm "
+        self.ctx.log.step(f"Extra: /axc-cut-release-tag {release.version} with nobody to confirm "
                           f"(should ask, then stop without tagging)")
         before = self.repo.remote_refs()
-        session = self.stages.run_skill("extra-gate", f"/axc-cut-release {release.version}",
+        session = self.stages.run_skill("extra-gate", f"/axc-cut-release-tag {release.version}",
                                         "confirmation gate", note=NO_REPLY_NOTE)
         text = session.final_text
         self.report.check("confirmation gate: preflight ran before the question",

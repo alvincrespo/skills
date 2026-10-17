@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -385,6 +386,27 @@ class BumpTests(RepoTestCase):
         _, _, err = self.run_cmd("bump", "0.4.0")
         self.assertIn("running bumpCommand: true 0.4.0", err)
 
+    def test_symlinked_version_file_is_written_through_and_stays_a_link(self) -> None:
+        shared = self.repo / "shared"
+        shared.mkdir()
+        (shared / "VERSION").write_text('const Version = "0.3.0"\n')
+        link = self.repo / "linked.go"
+        link.symlink_to(shared / "VERSION")
+        self.cfg["version"]["files"] = [{"path": "linked.go", "match": self.GO_MATCH}]
+        self.cfg_path.write_text(json.dumps(self.cfg))
+        code, _, _ = self.run_cmd("bump", "0.4.0")
+        self.assertEqual(code, 0)
+        self.assertTrue(link.is_symlink(), "the link was replaced by a regular file")
+        self.assertEqual((shared / "VERSION").read_text(), 'const Version = "0.4.0"\n')
+
+    def test_hard_linked_version_file_stays_linked(self) -> None:
+        other = self.repo / "other-name.go"
+        os.link(self.go, other)
+        code, _, _ = self.run_cmd("bump", "0.4.0")
+        self.assertEqual(code, 0)
+        self.assertIn('"0.4.0"', other.read_text())   # the other name sees the bump
+        self.assertEqual(os.stat(self.go).st_ino, os.stat(other).st_ino)
+
     def test_literal_suffix_after_placeholder(self) -> None:
         self.go.write_text('const Version = "0.3.0-SNAPSHOT"\n')
         self.cfg["version"]["files"] = [
@@ -449,6 +471,15 @@ class TagStatusTests(RepoTestCase):
         run_git(self.repo, "push", "origin", "pre/v0.3.0")
         self.assertEqual(self.cli("tag-status", "0.3.0")[:2], (0, "absent\n"))
 
+    def test_glob_characters_in_the_tag_format_do_not_match_other_tags(self) -> None:
+        run_git(self.repo, "tag", "v0.3.0")
+        cfg = json.loads(json.dumps(FIXTURE_CONFIG))
+        cfg["release"]["tagFormat"] = "v{V}*"   # `git tag -l 'v0.3.0*'` would match v0.3.0
+        path = self.repo / "glob.json"
+        path.write_text(json.dumps(cfg))
+        code, out, _ = run_cli("tag-status", "0.3.0", "--repo-root", str(self.repo), "--config", str(path))
+        self.assertEqual((code, out), (0, "absent\n"))
+
     def test_bad_version_exits_2(self) -> None:
         self.assertEqual(self.cli("tag-status", "banana")[0], 2)
 
@@ -481,6 +512,22 @@ class PhaseTests(RepoTestCase):
         self.assertEqual((code, out), (0, "bump\nopen-pr 63\n"))
         args = self.gh_calls[0].args[0]
         self.assertEqual(args[args.index("--head") + 1], "release/v0.5.0")
+
+    def test_gh_lookup_is_pinned_to_the_configured_repo(self) -> None:
+        from unittest import mock
+        cfg = json.loads(json.dumps(FIXTURE_CONFIG))
+        cfg["repo"] = "someone/their-repo"
+        path = self.repo / "withrepo.json"
+        path.write_text(json.dumps(cfg))
+        with mock.patch.object(release_tool, "gh", return_value="") as m:
+            code, out, _ = run_cli("phase", "0.5.0", "--repo-root", str(self.repo), "--config", str(path))
+        self.assertEqual((code, out), (0, "bump\n"))
+        args = m.call_args.args[0]
+        self.assertEqual(args[args.index("--repo") + 1], "someone/their-repo")
+
+    def test_gh_lookup_has_no_repo_flag_when_the_config_names_none(self) -> None:
+        self.phase("0.5.0")
+        self.assertNotIn("--repo", self.gh_calls[0].args[0])
 
     def test_gh_not_called_when_version_is_on_main(self) -> None:
         self.phase("0.4.0")
@@ -685,10 +732,88 @@ class AsciiStdoutTests(unittest.TestCase):
         self.assertIn("b (not found in wf.yml)", result.stdout)
 
 
+# Copied from the table in docs/adr/0005-release-skills-invocation-control.md.
+# True = `disable-model-invocation: true`; False = the line is absent.
+# When that ADR's table changes, this dict has to change with it.
+ADR_0005_DISABLE_MODEL_INVOCATION = {
+    "axc-cut-release": False,
+    "axc-cut-release-bump": False,
+    "axc-cut-release-preflight": False,
+    "axc-cut-release-tag": True,
+}
+
+
+def frontmatter_flags(skills_root: Path) -> dict[str, bool]:
+    """`disable-model-invocation` for each release skill under `skills_root`.
+
+    Reads the block between the first two `---` lines of its SKILL.md. The line must be
+    `disable-model-invocation: true` or absent; any other value raises.
+    """
+    flags = {}
+    for name in ADR_0005_DISABLE_MODEL_INVOCATION:
+        lines = (skills_root / name / "SKILL.md").read_text(encoding="utf-8").splitlines()
+        if not lines or lines[0].strip() != "---":
+            raise AssertionError(f"{name}/SKILL.md does not start with a frontmatter block")
+        end = next(i for i, line in enumerate(lines[1:], 1) if line.strip() == "---")
+        values = [line.split(":", 1)[1].strip() for line in lines[1:end]
+                  if line.startswith("disable-model-invocation:")]
+        if len(values) > 1 or (values and values[0] != "true"):
+            raise AssertionError(f"{name}: disable-model-invocation must be `true` or absent, got {values}")
+        flags[name] = bool(values)
+    return flags
+
+
+class FrontmatterTests(unittest.TestCase):
+    SKILLS_ROOT = Path(__file__).resolve().parents[2]
+
+    def test_frontmatter_matches_adr(self) -> None:
+        self.assertEqual(frontmatter_flags(self.SKILLS_ROOT), ADR_0005_DISABLE_MODEL_INVOCATION)
+
+    def test_changing_any_one_flag_is_caught(self) -> None:
+        for name, flagged in ADR_0005_DISABLE_MODEL_INVOCATION.items():
+            with self.subTest(skill=name), tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                for skill in ADR_0005_DISABLE_MODEL_INVOCATION:
+                    (root / skill).mkdir()
+                    shutil.copy(self.SKILLS_ROOT / skill / "SKILL.md", root / skill / "SKILL.md")
+                path = root / name / "SKILL.md"
+                text = path.read_text(encoding="utf-8")
+                if flagged:   # remove the flag
+                    text = text.replace("disable-model-invocation: true\n", "", 1)
+                else:         # add it
+                    text = text.replace("---\n", "---\ndisable-model-invocation: true\n", 1)
+                path.write_text(text, encoding="utf-8")
+                self.assertNotEqual(frontmatter_flags(root), ADR_0005_DISABLE_MODEL_INVOCATION)
+
+    def test_a_flag_set_to_something_other_than_true_is_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for skill in ADR_0005_DISABLE_MODEL_INVOCATION:
+                (root / skill).mkdir()
+                shutil.copy(self.SKILLS_ROOT / skill / "SKILL.md", root / skill / "SKILL.md")
+            path = root / "axc-cut-release" / "SKILL.md"
+            path.write_text(path.read_text(encoding="utf-8").replace(
+                "---\n", "---\ndisable-model-invocation: false\n", 1), encoding="utf-8")
+            with self.assertRaises(AssertionError):
+                frontmatter_flags(root)
+
+
 class VersionRegexTests(unittest.TestCase):
     def test_captures_prerelease(self) -> None:
         m = release_tool.version_regex('"version": "{V}"').search('"version": "1.2.3-rc.1"')
         self.assertEqual(m.group(1), "1.2.3-rc.1")
+
+    def test_a_literal_after_the_placeholder_is_not_swallowed_as_a_prerelease(self) -> None:
+        for match, text, want in [
+            ("{V}-SNAPSHOT", "x 1.2.3-SNAPSHOT", "1.2.3"),
+            ("v{V}-linux", "v1.2.3-linux", "1.2.3"),
+            ("version-{V}-final", "version-1.2.3-final", "1.2.3"),
+            ("app:{V}-alpine", "app:1.2.3-alpine", "1.2.3"),
+            ("app:{V}-alpine", "app:1.2.3-rc.1-alpine", "1.2.3-rc.1"),
+            ('"v{V}-slim"', '"v1.2.3-slim"', "1.2.3"),
+        ]:
+            with self.subTest(match=match, text=text):
+                self.assertEqual(release_tool.version_regex(match).search(text).group(1), want)
 
     def test_rejects_leading_zero_version(self) -> None:
         pattern = release_tool.version_regex('"version": "{V}"')

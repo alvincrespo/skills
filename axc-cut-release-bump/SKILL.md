@@ -1,6 +1,6 @@
 ---
 name: axc-cut-release-bump
-description: Phase 1 of a release — open the version-bump PR, driven by the repo's `.claude/release.json`. Branches off main, bumps the version in the configured file(s) (or runs the configured bump command), sanity-checks, commits, and opens a PR. Stops there — the user merges it, then runs `/axc-cut-release` again to tag. Never pushes to main. Use when the user says "/axc-cut-release-bump", or invoked by the `axc-cut-release` router for Phase 1.
+description: Phase 1 of a release — open the version-bump PR, driven by the repo's `.claude/release.json`. Branches off main, bumps the version in the configured file(s) (or runs the configured bump command), sanity-checks, commits, and opens a PR. Stops there — the user merges it, then runs `/axc-cut-release-tag <V>` to tag. Never pushes to main. Use when the user says "/axc-cut-release-bump", or invoked by the `axc-cut-release` router for Phase 1.
 ---
 
 # Release Bump (Phase 1)
@@ -29,6 +29,10 @@ first — this skill won't sweep unrelated changes into a release branch.
 
 1. `git fetch origin <mainBranch>`, then branch off it (substitute `{V}` in `commit.branch`):
    `git checkout -b <commit.branch> origin/<mainBranch>`
+   - If that branch already exists, locally or on origin (`git branch --list <commit.branch>`,
+     `git ls-remote --heads origin <commit.branch>`), stop and tell the user: a closed or abandoned
+     attempt left it behind. They can delete it or pick another version. Don't reuse it or
+     force-push over it.
 2. Bump the version with the router's helper script, then verify it:
    ```bash
    python3 "${CLAUDE_SKILL_DIR}/../axc-cut-release/scripts/release_tool.py" bump <V>
@@ -42,7 +46,10 @@ first — this skill won't sweep unrelated changes into a release branch.
    any lockfile it updates). If a file's `match` pattern isn't found it exits `2` having written
    nothing. `check-versions` must exit `0`, every file `✓`; on anything else, stop and report the
    output. Don't hand-edit the files to get past a failure.
-3. Sanity-check before committing: run `checks.build` and `checks.test` (and a formatter check if the
+3. Check what changed: `git status --short` should list only the `version.files[]` paths (plus a
+   lockfile, if `version.bumpCommand` updates one). If `bumpCommand` touched anything else, stop and
+   report it, because step 4 commits everything.
+   Then sanity-check before committing: run `checks.build` and `checks.test` (and a formatter check if the
    stack has one, e.g. `gofmt -l <dir>` or `npm run format -- --check`). If they fail, stop and report.
 4. Commit (substitute `{V}` in `commit.title`):
    `git commit -am "<commit.title>"`
@@ -58,8 +65,9 @@ first — this skill won't sweep unrelated changes into a release branch.
    - Body: one line stating the bump (`cur → V`) and that merging unblocks tagging `<tagFormat>`.
      Note CI must be green before merge.
 6. **Stop.** Report the PR URL and the exact next step:
-   > PR #NN opened. Review and merge it, then run `/axc-cut-release <V>` to tag and publish.
-   (Naming the **explicit** `V` avoids a keyword re-run recomputing a fresh bump.)
+   > PR #NN opened. Review and merge it, then run `/axc-cut-release-tag <V>` to tag and publish.
+   (Name the **explicit** `V`. `/axc-cut-release-tag` is the command that tags; a keyword re-run of
+   `/axc-cut-release` would recompute a fresh bump instead.)
 
 Opening a PR is reversible (close it), so this proceeds without a yes/no gate — but always show the
 resolved version and branch name first.
