@@ -22,8 +22,13 @@ The target version `V` (e.g. `0.3.0`). If omitted, resolve it the way `axc-cut-r
 
 ## Precondition
 
-Working tree clean (`git status --porcelain` empty). If dirty, stop and ask the user to commit/stash
-first — this skill won't sweep unrelated changes into a release branch.
+No uncommitted changes to tracked files: `git status --porcelain --untracked-files=no` prints nothing.
+If it prints anything, stop and ask the user to commit or stash first — step 4 commits with `-a`,
+which would sweep those changes into the release commit.
+
+Untracked files are fine. `git commit -a` only stages tracked files, so an untracked file (a scratch
+note, a plan) can't end up in the release commit. Leave them alone, and name them in your final
+report so the user knows they were left out.
 
 ## Steps
 
@@ -46,7 +51,7 @@ first — this skill won't sweep unrelated changes into a release branch.
    any lockfile it updates). If a file's `match` pattern isn't found it exits `2` having written
    nothing. `check-versions` must exit `0`, every file `✓`; on anything else, stop and report the
    output. Don't hand-edit the files to get past a failure.
-3. Check what changed: `git status --short` should list only the `version.files[]` paths (plus a
+3. Check what changed: `git status --short --untracked-files=no` should list only the `version.files[]` paths (plus a
    lockfile, if `version.bumpCommand` updates one). If `bumpCommand` touched anything else, stop and
    report it, because step 4 commits everything.
    Then sanity-check before committing: run `checks.build` and `checks.test` (and a formatter check if the
@@ -68,6 +73,9 @@ first — this skill won't sweep unrelated changes into a release branch.
    > PR #NN opened. Review and merge it, then run `/axc-cut-release-tag <V>` to tag and publish.
    (Name the **explicit** `V`. `/axc-cut-release-tag` is the command that tags; a keyword re-run of
    `/axc-cut-release` would recompute a fresh bump instead.)
+   If untracked files were present, list them and say they were left out of the commit. Preflight's
+   "working tree clean" check does count untracked files, so tell the user to move or stash them
+   (`git stash -u`) before running `/axc-cut-release-tag`.
 
 Opening a PR is reversible (close it), so this proceeds without a yes/no gate — but always show the
 resolved version and branch name first.
