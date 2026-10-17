@@ -33,7 +33,8 @@ If it's missing, auto-detect and **offer to write one** before doing anything:
 
 Show the resolved/inferred config and confirm before proceeding. Fields used here: `repo`,
 `mainBranch`, `version.files[]` (`path` + `match`, where `{V}` marks the version), `commit.branch`,
-`release.tagFormat`. `{V}` = version **without** the `v` prefix.
+`release.tagFormat`. `{V}` = version **without** the `v` prefix. Every field is documented in
+[references/release-json.md](references/release-json.md).
 
 ## Argument
 
