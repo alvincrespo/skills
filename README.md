@@ -51,7 +51,7 @@ create the repo, apply labels, and bootstrap the issues. See
 [PROJECT_PLAN.md](./PROJECT_PLAN.md) for the design.
 
 The four `axc-cut-release*` skills work together through the repo's
-`.claude/release.json`: `/axc-cut-release` works out the version and opens
+`.claude/release.json` ([every field is documented](./axc-cut-release/references/release-json.md)): `/axc-cut-release` works out the version and opens
 the bump PR, and once you've merged it, `/axc-cut-release-tag <V>` runs
 preflight and pushes the tag. A skill is listed here only once it's
 finished.

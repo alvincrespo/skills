@@ -798,6 +798,87 @@ class FrontmatterTests(unittest.TestCase):
                 frontmatter_flags(root)
 
 
+class ReleaseJsonDocTests(unittest.TestCase):
+    """axc-cut-release/references/release-json.md must not drift from the config or the helper."""
+
+    REPO = Path(__file__).resolve().parents[2]
+    DOC = REPO / "axc-cut-release" / "references" / "release-json.md"
+    # What load_config rejects a config without. The doc's "Required" column must say **yes** for these.
+    HELPER_REQUIRED = ["mainBranch", "version.files[]", "version.files[].path", "version.files[].match",
+                       "commit.branch", "release.tagFormat"]
+
+    def doc(self) -> str:
+        return self.DOC.read_text(encoding="utf-8")
+
+    def json_blocks(self) -> list[str]:
+        import re
+        return re.findall(r"```json\n(.*?)\n```", self.doc(), re.S)
+
+    def test_there_are_three_examples(self) -> None:
+        self.assertEqual(len(self.json_blocks()), 3)
+
+    def test_example_1_is_this_repos_release_json_byte_for_byte(self) -> None:
+        actual = (self.REPO / ".claude" / "release.json").read_text(encoding="utf-8")
+        self.assertEqual(self.json_blocks()[0] + "\n", actual,
+                         "re-copy .claude/release.json into Example 1 of the reference doc")
+
+    def test_every_example_parses_and_passes_the_helpers_validation(self) -> None:
+        for i, block in enumerate(self.json_blocks(), 1):
+            with self.subTest(example=i), tempfile.TemporaryDirectory() as tmp:
+                json.loads(block)
+                path = Path(tmp) / "release.json"
+                path.write_text(block)
+                release_tool.load_config(path)   # raises ReleaseToolError if invalid
+
+    def test_the_doc_covers_every_key_in_this_repos_config(self) -> None:
+        def paths(node, prefix=""):
+            for key, value in node.items():
+                dotted = f"{prefix}{key}"
+                if isinstance(value, dict):
+                    yield from paths(value, dotted + ".")
+                else:
+                    yield dotted
+        config = json.loads((self.REPO / ".claude" / "release.json").read_text())
+        doc = self.doc()
+        missing = [p for p in paths(config) if f"`{p}" not in doc]
+        self.assertEqual(missing, [], "keys in .claude/release.json the reference doc does not document")
+
+    def test_the_required_column_matches_what_the_helper_enforces(self) -> None:
+        import re
+        rows = {}
+        for line in self.doc().splitlines():
+            m = re.match(r"\| `([^`]+)` \|(.*)", line)
+            if m:
+                rows[m.group(1)] = [c.strip() for c in m.group(2).split("|")]
+        for field in self.HELPER_REQUIRED:
+            with self.subTest(field=field):
+                self.assertIn(field, rows)
+                self.assertIn("**yes**", rows[field][1])   # columns: Type, Required, ...
+        # and the helper really does reject a config without each of them
+        base = json.loads((self.REPO / ".claude" / "release.json").read_text())
+        for key in ("mainBranch", "version", "commit", "release"):
+            with self.subTest(removed=key), tempfile.TemporaryDirectory() as tmp:
+                broken = {k: v for k, v in base.items() if k != key}
+                path = Path(tmp) / "release.json"
+                path.write_text(json.dumps(broken))
+                with self.assertRaises(release_tool.ReleaseToolError):
+                    release_tool.load_config(path)
+
+    def test_all_four_skills_and_the_readme_link_the_doc(self) -> None:
+        for skill in ("axc-cut-release", "axc-cut-release-bump", "axc-cut-release-preflight", "axc-cut-release-tag"):
+            with self.subTest(skill=skill):
+                self.assertIn("release-json.md", (self.REPO / skill / "SKILL.md").read_text(encoding="utf-8"))
+        self.assertIn("./axc-cut-release/references/release-json.md", (self.REPO / "README.md").read_text(encoding="utf-8"))
+
+    def test_every_link_to_the_doc_resolves(self) -> None:
+        import re
+        for skill in ("axc-cut-release", "axc-cut-release-bump", "axc-cut-release-preflight", "axc-cut-release-tag"):
+            text = (self.REPO / skill / "SKILL.md").read_text(encoding="utf-8")
+            for target in re.findall(r"\]\(([^)]*release-json\.md)\)", text):
+                with self.subTest(skill=skill, target=target):
+                    self.assertTrue((self.REPO / skill / target).resolve().is_file())
+
+
 class VersionRegexTests(unittest.TestCase):
     def test_captures_prerelease(self) -> None:
         m = release_tool.version_regex('"version": "{V}"').search('"version": "1.2.3-rc.1"')

@@ -14,6 +14,7 @@ Read `.claude/release.json` first (Read tool). If missing, auto-detect (`package
 `go.mod` → go) and offer to write one before proceeding — see `axc-cut-release` for the defaults.
 Fields used here: `mainBranch`, `version.files[]` (`path` + `match`), `version.bumpCommand` (optional),
 `commit.branch`, `commit.title`, `checks.build`, `checks.test`. `{V}` = version without the `v` prefix.
+Every field is documented in [release-json.md](../axc-cut-release/references/release-json.md).
 
 ## Argument
 
