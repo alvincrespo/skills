@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""Stand-in for headless `claude -p`. It does what the release skills should do, using the
+project's real release_tool.py, so the harness's setup, checks and teardown run for real.
+
+It recognises the prompts the harness sends:
+  /axc-cut-release patch               open a bump PR (delegating to the bump skill)
+  /axc-cut-release <V>                 stop if released; else run preflight, then tag (or, if the
+                                       prompt says nobody will reply, ask to confirm and stop)
+  /axc-cut-release-preflight <V>       report Blocked if the tag exists, else Ready
+
+FAKE_STATE (required) is the same directory the fake gh uses. FAKE_CLAUDE_MODE selects a failure:
+  ok (default)    no-tag-push      phase 2 forgets to push the tag
+  fail            exit 1 with is_error
+  interrupt       send SIGINT to the parent, then hang
+  ignore-gate     tag and push even when nobody replied to the confirmation
+  silent-gate     stop without tagging but never ask (a "?" appears only earlier in the message)
+  preflight-green preflight says Ready even when the tag exists
+  no-delegation   do the work without invoking any skill
+  continue-when-released   the router delegates to the tag skill even when already released
+FAKE_CLAUDE_TOOL_ERRORS=1 also reports three failed tool calls: two permission denials and the
+404 the real tag skill hits for `gh run list --workflow=release.yml`.
+"""
+import json
+import os
+import signal
+import subprocess
+import sys
+import time
+
+STATE = os.environ["FAKE_STATE"]
+MODE = os.environ.get("FAKE_CLAUDE_MODE", "ok")
+TOOL = ".claude/skills/axc-cut-release/scripts/release_tool.py"
+
+
+def sh(*cmd):
+    return subprocess.run(cmd, capture_output=True, text=True, check=True).stdout.strip()
+
+
+def emit(event):
+    print(json.dumps(event), flush=True)
+
+
+def say(text):
+    emit({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
+
+
+def use_skill(name):
+    if MODE != "no-delegation":
+        emit({"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "Skill", "input": {"skill": name}}]}})
+
+
+def tool_errors():
+    denial = "This Bash command contains multiple operations. The following part requires approval: echo"
+    not_found = "Exit code 1\nHTTP 404: workflow release.yml not found on the default branch"
+    blocks = [
+        {"type": "tool_result", "is_error": True, "content": denial},
+        {"type": "tool_result", "is_error": True, "content": [{"type": "text", "text": denial}]},
+        {"type": "tool_result", "is_error": True, "content": not_found},
+        {"type": "tool_result", "is_error": False, "content": "fine"},
+    ]
+    emit({"type": "user", "message": {"role": "user", "content": blocks}})
+
+
+def result(text="done", is_error=False):
+    emit({"type": "result", "subtype": "error" if is_error else "success",
+          "is_error": is_error, "total_cost_usd": 0.01, "result": text})
+
+
+def bump():
+    version = sh("python3", TOOL, "next", "patch")
+    say(f"next={version} phase={sh('python3', TOOL, 'phase', version)}")
+    use_skill("axc-cut-release-bump")
+    sh("git", "checkout", "-q", "-b", f"release/v{version}", "origin/main")
+    sh("python3", TOOL, "bump", version)
+    sh("python3", TOOL, "check-versions", version)
+    sh("git", "commit", "-q", "-am", f"release: v{version}")
+    sh("git", "push", "-q", "-u", "origin", f"release/v{version}")
+    path = f"{STATE}/prs.json"
+    prs = json.load(open(path)) if os.path.exists(path) else []
+    prs.append({"number": len(prs) + 1, "title": f"release: v{version}", "state": "open",
+                "base": {"ref": "main"}, "head": {"ref": f"release/v{version}"}})
+    json.dump(prs, open(path, "w"))
+    result(f"Opened the PR bumping to {version}.")
+
+
+def route(version, nobody_replies):
+    phase = sh("python3", TOOL, "phase", version)
+    say(f"phase={phase}")
+    if phase == "released" and MODE == "continue-when-released":
+        use_skill("axc-cut-release-tag")
+        return result(f"Version {version} is released, but carrying on anyway.")
+    if phase == "released":
+        return result(f"Version {version} is already released (the tag exists). Stopping.")
+    assert phase == "tag", phase
+    use_skill("axc-cut-release-tag")
+    sh("git", "checkout", "-q", "main")
+    sh("git", "pull", "-q", "--ff-only", "origin", "main")
+    use_skill("axc-cut-release-preflight")
+    sh("python3", TOOL, "check-versions", version)
+    sh("python3", TOOL, "workflow-checks")
+    if nobody_replies and MODE == "silent-gate":
+        return result("Why wait? Preflight is next.\n\nPreflight passed.\n\nAll checks are green.\n\nDone.")
+    if nobody_replies and MODE != "ignore-gate":
+        return result("Everything passed. Is that right?\n\n✅ **Ready to release.**\n\n"
+                      f"Pushing v{version} triggers the release workflow, which publishes the "
+                      f"{version} GitHub Release. Push the tag?\n\nI'm stopping here until you confirm.")
+    sh("git", "tag", "-a", f"v{version}", "-m", f"Release v{version}")
+    if MODE != "no-tag-push":
+        sh("git", "push", "-q", "origin", f"v{version}")
+    result(f"Pushed v{version}.")
+
+
+def preflight(version):
+    status = sh("python3", TOOL, "tag-status", version)
+    if status != "absent" and MODE != "preflight-green":
+        return result(f"❌ **Blocked.** The tag v{version} already exists ({status}).")
+    result("✅ **Ready to release.**")
+
+
+def main():
+    open(f"{STATE}/claude.pid", "w").write(str(os.getpid()))
+    prompt = sys.argv[sys.argv.index("-p") + 1]
+    first = prompt.split("\n")[0]
+    if MODE == "fail":
+        result(is_error=True)
+        return 1
+    if MODE == "interrupt":
+        os.kill(os.getppid(), signal.SIGINT)
+        time.sleep(60)
+        return 0
+    if os.environ.get("FAKE_CLAUDE_TOOL_ERRORS"):
+        tool_errors()
+    sh("git", "fetch", "-q", "origin", "main")
+    if first == "/axc-cut-release patch":
+        bump()
+    elif first.startswith("/axc-cut-release-preflight "):
+        preflight(first.split()[1])
+    else:
+        route(first.split()[1], nobody_replies="end your turn" in prompt)
+    return 0
+
+
+sys.exit(main())

@@ -1,9 +1,10 @@
 # CLAUDE.md — how this repo is maintained
 
-Skills live as flat top-level folders — no bucket subdirectories yet (see
-`docs/adr/0001-four-skills-not-one.md` and the "defer until there's an
-actual second reason" note in `PROJECT_PLAN.md`). Revisit this once a
-second, genuinely different domain of skill shows up — not preemptively.
+Skills live as flat top-level folders, with no bucket subdirectories.
+`docs/adr/0006-stay-flat-at-nine-skills.md` records why, lists every path
+that assumes the flat layout, and says when to revisit: more than 15
+skills in `plugin.json`, or two skills in different domains needing the
+same folder name.
 
 Every finished skill must have:
 - an entry in the top-level `README.md`, its name linked to its `SKILL.md`
@@ -37,7 +38,10 @@ To (re)link every skill into the local harness skill directories
 (`~/.claude/skills`, `~/.agents/skills`), run `scripts/link-skills.sh`. It
 discovers skill folders by presence of a `SKILL.md`, so it needs no edits
 when a new skill folder is added — just re-run it after adding, removing,
-or renaming one.
+or renaming one. It replaces existing symlinks but won't touch anything else at a
+link's path, such as a real directory left by a copy installed by hand:
+it skips it, says so, and exits 1, so move it aside and re-run.
+`scripts/test-link-skills.sh` tests this against a throwaway `HOME`.
 
 Standalone `.skill` packaging (`scripts/package-standalone-skills.sh`) is
 only for skills that are fully self-contained and model-invoked. A skill

@@ -43,6 +43,7 @@ jobs:
           project-epic-planner/scripts/test_render_plan.py
           github-project-bootstrap/scripts/test_bootstrap_github_project.py
           github-labels-setup/scripts/test_ensure_labels.py
+          axc-cut-release/scripts/test_release_tool.py
           axc-dependabot-sweep/scripts/test_config.py
           axc-dependabot-sweep/scripts/test_list_prs.py
           axc-dependabot-sweep/scripts/test_wait_for_pr.py
@@ -60,6 +61,9 @@ jobs:
 
       - name: axc-og-cards unit tests
         run: npm test --prefix axc-og-cards
+
+      - name: link-skills tests
+        run: scripts/test-link-skills.sh
 
       # Pinned so a change upstream can't silently change what gets packaged.
       - name: Fetch skill-creator
