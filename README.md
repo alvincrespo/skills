@@ -24,6 +24,12 @@ initialize the repo, set up labels, and bootstrap the board itself.
   the illustration comes from a paid OpenRouter image model, with spend
   limited by a budget and recorded in a ledger. For Bridgetown sites; needs
   Node 20.9+ and an `OPENROUTER_API_KEY`. User-invoked only.
+- [axc-dependabot-sweep](./axc-dependabot-sweep/SKILL.md) — clear a repo's
+  open Dependabot PRs oldest first: review each bump, fix what the review
+  finds, verify locally, wait for CI on the exact head SHA, then merge. Shows
+  the ordered plan and gets one explicit yes before changing anything;
+  `--dry-run` previews it. Needs `gh` and a `verify` command in
+  `.claude/dependabot-sweep.json`.
 
 The first four chain together: describe a project, review the generated plan, then
 create the repo, apply labels, and bootstrap the issues. See
@@ -50,7 +56,8 @@ each other's code rather than duplicating it: `github-project-bootstrap` runs `g
 script, and `project-epic-planner` validates plans with
 `github-project-bootstrap`'s loader. Each expects the other to be
 installed next to it. `axc-og-cards` stands alone and can be installed on
-its own.
+its own. `axc-dependabot-sweep` is self-contained too, but it isn't
+packaged as a `.skill`: it acts on GitHub and needs `gh`.
 
 ### Standalone `.skill` files
 

@@ -25,6 +25,7 @@
     "./github-repo-init",
     "./github-labels-setup",
     "./github-project-bootstrap",
-    "./axc-og-cards"
+    "./axc-og-cards",
+    "./axc-dependabot-sweep"
   ]
 }
