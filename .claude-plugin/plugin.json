@@ -26,6 +26,10 @@
     "./github-labels-setup",
     "./github-project-bootstrap",
     "./axc-og-cards",
+    "./axc-cut-release",
+    "./axc-cut-release-bump",
+    "./axc-cut-release-preflight",
+    "./axc-cut-release-tag",
     "./axc-dependabot-sweep"
   ]
 }
