@@ -1,7 +1,7 @@
 # ADR 0004: `axc-dependabot-sweep` — model-invocable, behind one up-front approval
 
 ## Status
-Proposed. Tracked in #66.
+Accepted. Built and tested in #66.
 
 ## Context
 Dependabot PRs pile up, and working through them safely is mechanical but
