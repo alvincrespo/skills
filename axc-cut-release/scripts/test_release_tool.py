@@ -810,6 +810,16 @@ class ReleaseJsonDocTests(unittest.TestCase):
     def doc(self) -> str:
         return self.DOC.read_text(encoding="utf-8")
 
+    def table_rows(self) -> dict[str, list[str]]:
+        """The Fields table: {field: [Type, Required, Read by, {V}]}. Prose mentions don't count."""
+        import re
+        rows = {}
+        for line in self.doc().splitlines():
+            m = re.match(r"\| `([^`]+)` \|(.*)", line)
+            if m:
+                rows[m.group(1)] = [c.strip() for c in m.group(2).split("|")]
+        return rows
+
     def json_blocks(self) -> list[str]:
         import re
         return re.findall(r"```json\n(.*?)\n```", self.doc(), re.S)
@@ -831,30 +841,26 @@ class ReleaseJsonDocTests(unittest.TestCase):
                 release_tool.load_config(path)   # raises ReleaseToolError if invalid
 
     def test_the_doc_covers_every_key_in_this_repos_config(self) -> None:
-        def paths(node, prefix=""):
+        def leaves(node, prefix=""):
             for key, value in node.items():
-                dotted = f"{prefix}{key}"
                 if isinstance(value, dict):
-                    yield from paths(value, dotted + ".")
+                    yield from leaves(value, f"{prefix}{key}.")
                 else:
-                    yield dotted
+                    yield f"{prefix}{key}"   # a list counts as one field, e.g. version.files
         config = json.loads((self.REPO / ".claude" / "release.json").read_text())
-        doc = self.doc()
-        missing = [p for p in paths(config) if f"`{p}" not in doc]
-        self.assertEqual(missing, [], "keys in .claude/release.json the reference doc does not document")
+        documented = {field.replace("[]", "") for field in self.table_rows()}
+        missing = [leaf for leaf in leaves(config) if leaf not in documented]
+        self.assertEqual(missing, [], "keys in .claude/release.json with no row in the Fields table")
 
     def test_the_required_column_matches_what_the_helper_enforces(self) -> None:
-        import re
-        rows = {}
-        for line in self.doc().splitlines():
-            m = re.match(r"\| `([^`]+)` \|(.*)", line)
-            if m:
-                rows[m.group(1)] = [c.strip() for c in m.group(2).split("|")]
-        for field in self.HELPER_REQUIRED:
+        rows = self.table_rows()
+        said_yes = {field for field, cells in rows.items() if "**yes**" in cells[1]}
+        self.assertEqual(said_yes, set(self.HELPER_REQUIRED),
+                         "fields the doc calls required should be exactly the ones load_config enforces")
+        for field in ("commit.title", "release.workflow"):   # needed by one skill, not by the helper
             with self.subTest(field=field):
-                self.assertIn(field, rows)
-                self.assertIn("**yes**", rows[field][1])   # columns: Type, Required, ...
-        # and the helper really does reject a config without each of them
+                self.assertTrue(rows[field][1].startswith("for "), rows[field][1])
+        # and the helper really does reject a config missing each required section
         base = json.loads((self.REPO / ".claude" / "release.json").read_text())
         for key in ("mainBranch", "version", "commit", "release"):
             with self.subTest(removed=key), tempfile.TemporaryDirectory() as tmp:

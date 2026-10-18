@@ -17,8 +17,13 @@ means npm, `go.mod` means Go) and offer to write one; the npm and Go examples be
 
 ## Fields
 
-"Required" means the helper rejects the config without it. Every helper subcommand loads and checks
-these, so treat them as required for any use.
+The **Required** column says who needs a field:
+
+- **yes**: the helper rejects the config without it. Every helper subcommand loads and checks these, so
+  treat them as required for any use.
+- **for ...**: the helper accepts a config without it, but the skill named needs it
+  (`commit.title` for the bump skill, `release.workflow` for preflight and `workflow-checks`).
+- **no**: optional.
 
 | Field | Type | Required | Read by | `{V}` |
 |---|---|---|---|---|
@@ -68,7 +73,9 @@ the repo root with a five-minute limit, and the helper prints it to stderr first
 **`commit.branch`** and **`commit.title`**: the release PR's branch and its commit and PR title, for
 example `release/v{V}` and `release: v{V}`. The router looks for an open PR on `commit.branch` so it
 doesn't open a second one. The helper requires `commit.branch` but does not check `commit.title`; the
-bump skill needs it.
+bump skill needs it. Put `{V}` in `commit.branch`: the helper doesn't check that it is there, but without
+it every release uses the same branch name, and the bump skill stops on the second one because the
+branch already exists.
 
 **`checks.*`**: shell command lines, run from the repo root, all optional. The bump skill runs `build`
 and `test` before committing. Preflight runs all four, skipping any that is empty or missing, but only
@@ -76,7 +83,9 @@ when its git-state, version and workflow checks found no hard failure; a missing
 `lint` is a warning, not a failure. `integrity` is for checks on what will ship, such as
 `npm pack --dry-run` or `go mod verify`.
 
-**`release.tagFormat`**: the tag name, for example `v{V}`.
+**`release.tagFormat`**: the tag name, for example `v{V}`. Include `{V}`: the helper doesn't check that it
+is there, but without it every release gets the same tag, so from the second release on the version is
+reported as already released when you come to tag it.
 
 **`release.artifact`**: only changes the wording of the tag skill's confirmation. `npm` says the tag
 publishes the package to npm; `github-release` says it publishes a GitHub Release; any other value is
