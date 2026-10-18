@@ -14,6 +14,7 @@ it always runs preflight and gets explicit confirmation before the push.
 Read `.claude/release.json` first (Read tool). If missing, auto-detect and offer to write one — see
 `axc-cut-release` for defaults. Fields used here: `mainBranch`, `version.files[]` (`path` + `match`),
 `release.tagFormat`, `release.workflow`, `release.artifact`. `{V}` = version without the `v` prefix.
+Every field is documented in [release-json.md](../axc-cut-release/references/release-json.md).
 
 ## Argument
 
